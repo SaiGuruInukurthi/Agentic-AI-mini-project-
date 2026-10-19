@@ -1,0 +1,18 @@
+# Core
+groq>=0.37
+langgraph>=1.2
+pydantic>=2.14
+python-dotenv>=1.2
+httpx>=0.28
+tenacity>=9.2
+
+# Backend (M5)
+fastapi>=0.143
+uvicorn>=0.54
+sse-starlette>=3.5
+
+# MCP (pinned <2: FastMCP was renamed to MCPServer in mcp 2.x with breaking API changes)
+mcp>=1.17,<2
+
+# Dev / tests
+pytest>=9.1
