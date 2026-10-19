@@ -52,7 +52,8 @@ The Groq free tier is limited and cannot be refilled. Treat every live call as e
 - Build in the order of the milestones in `Docs/MVP.md` Section 12 (M1 to M6). Do not start the next milestone until the current acceptance check passes.
 - **Full-project build authorized (19-10-2026):** the user has OK'd building M1 to M6 in one session. Work milestone by milestone; after each one, write a timestamped report to `Docs/reports/` named `DD-MM-YYYY HH-MM_<M#>_<type>.md` (e.g. `19-10-2026 13-00_M1_report.md`), give the user a brief summary, then continue.
 - **Pause and wait for feedback only if** an acceptance check fails, a live run errors, or the token budget is at risk. Do not self-iterate with live API calls to polish results.
-- MCP server choices (verified on this machine): search via `npx -y duckduckgo-mcp-server`, fetch via `uvx mcp-server-fetch` (both keyless); MCP clients use the official `mcp` Python SDK already in `mini` (no `langchain-mcp-adapters` needed).
+- The spec's model `llama-3.1-8b-instant` was retired (verified 404 "model_not_found" on 19-10-2026). We use `openai/gpt-oss-20b` (available on the key, JSON mode OK), set as `GROQ_MODEL` in `.env` and as the default in `app/llm.py`.
+- MCP server choices (verified 19-10-2026): search is our own FastMCP server `mcp_servers/search_server.py` wrapping `ddgs` (the npm `duckduckgo-mcp-server` triggers DDG anomaly detection from this network), fetch via `uvx mcp-server-fetch` (keyless); MCP clients use the official `mcp` Python SDK, pinned `<2` in `requirements.txt` (FastMCP was renamed in mcp 2.x), no `langchain-mcp-adapters`. Free search engines are flaky; the search tool already retries up to 3 times.
 - Keep changes small and scoped to the milestone. No extra features outside `Docs/MVP.md` Section 2.
 - If something in the spec is unclear or seems wrong, say so in the report rather than silently changing the design.
 - All LLM access goes through `app/llm.py` only.
@@ -69,3 +70,4 @@ The Groq free tier is limited and cannot be refilled. Treat every live call as e
 | Run unit tests (no API) | `& "C:\Users\IC1807\anaconda3\envs\mini\python.exe" -m pytest tests -q` |
 | Install a package | `& "C:\Users\IC1807\anaconda3\envs\mini\python.exe" -m pip install <package>` |
 | Run backend (M5+) | `& "C:\Users\IC1807\anaconda3\envs\mini\python.exe" -m uvicorn app.main:app --reload` |
+| MCP smoke test (no API) | `& "C:\Users\IC1807\anaconda3\envs\mini\python.exe" samples\smoke_mcp.py` |

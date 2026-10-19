@@ -14,5 +14,8 @@ sse-starlette>=3.5
 # MCP (pinned <2: FastMCP was renamed to MCPServer in mcp 2.x with breaking API changes)
 mcp>=1.17,<2
 
+# Search MCP server backend
+ddgs>=9.16
+
 # Dev / tests
 pytest>=9.1
