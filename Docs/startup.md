@@ -62,7 +62,7 @@ Prints verdict, score, explanation, and per-source findings. A full run is ~13 L
 & "C:\Users\IC1807\anaconda3\envs\mini\python.exe" -m uvicorn app.main:app --reload
 ```
 
-Open http://127.0.0.1:8000, paste a claim, press **Check claim**. Live progress streams per source; each claim gets its own result card. The page also has **▶ Demo replay**, which replays the latest trace from `logs/` at no token cost.
+Open http://127.0.0.1:8000, paste a claim, press **Check claim**. Live progress streams per source; each claim gets its own result card with a collapsible **Sources** table (linked URLs, stance chip, credibility bar, quote). The page also has **▶ Demo replay**, which replays the latest trace from `logs/` at no token cost.
 
 ## Troubleshooting (seen during the build)
 
