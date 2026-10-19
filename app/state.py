@@ -22,6 +22,7 @@ class Finding(TypedDict):
 
 class State(TypedDict):
     claim: str
+    search_query: str
     sources: list[Source]
     findings: Annotated[list[Finding], operator.add]
     retries: int

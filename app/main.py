@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from .graph import build_graph
 from .llm import get_client, log_usage
 from .mcp_client import MCPManager
+from .nodes import extract_claims_llm
 
 logging.basicConfig(level=logging.WARNING)
 log = logging.getLogger("factchecker.api")
@@ -54,27 +55,44 @@ async def check(request: Request):
     async def event_stream():
         try:
             async with asyncio.timeout(RUN_BUDGET_SECONDS):
-                async for chunk in graph.astream({"claim": text, "retries": 0}, stream_mode="updates"):
-                    for node, update in chunk.items():
-                        if node == "extract_claims":
-                            yield _sse({"type": "progress", "node": node, "detail": "Checking claim"})
-                        elif node == "search":
-                            n = len(update.get("sources", []))
-                            yield _sse({"type": "progress", "node": node, "detail": f"Found {n} candidate sources"})
-                        elif node == "branch":
-                            finding = update["findings"][-1]
-                            yield _sse({"type": "progress", "node": node,
-                                        "detail": f"Checked {finding['title'] or finding['url']}"})
-                            yield _sse({"type": "finding", "finding": finding})
-                        elif node == "summarize" and update:
-                            yield _sse({
-                                "type": "result",
-                                "claim": text,
-                                "verdict": update.get("verdict", "Unverifiable"),
-                                "score": update.get("score", 0.0),
-                                "explanation": update.get("explanation", ""),
-                                "findings": [],
-                            })
+                claims, notice = await extract_claims_llm(request.app.state.llm, text)
+                if not claims:
+                    claims = [text]
+                yield _sse({"type": "progress", "node": "extract_claims",
+                            "detail": f"Extracted {len(claims)} claim(s)" + (f" - {notice}" if notice else "")})
+                if notice:
+                    yield _sse({"type": "notice", "message": notice})
+                for idx, claim in enumerate(claims, 1):
+                    yield _sse({"type": "progress", "node": "search",
+                                "detail": f"Claim {idx}/{len(claims)}: checking sources"})
+                    summary = {}
+                    retries_seen = 0
+                    async for chunk in graph.astream({"claim": claim, "retries": 0}, stream_mode="updates"):
+                        for node, update in chunk.items():
+                            if node == "prep_retry":
+                                retries_seen = update.get("retries", retries_seen + 1)
+                            elif node == "search":
+                                n = len(update.get("sources", []))
+                                retries = update.get("retries", 0)
+                                label = "Retrying with refined query" if retries else "Found"
+                                yield _sse({"type": "progress", "node": node,
+                                            "detail": f"{label}: {n} candidate sources"})
+                            elif node == "branch":
+                                finding = update["findings"][-1]
+                                yield _sse({"type": "progress", "node": node,
+                                            "detail": f"Checked {finding['title'] or finding['url']}"})
+                                yield _sse({"type": "finding", "finding": finding})
+                            elif node == "summarize" and update:
+                                summary = update
+                    yield _sse({
+                        "type": "result",
+                        "claim": claim,
+                        "verdict": summary.get("verdict", "Unverifiable"),
+                        "score": summary.get("score", 0.0),
+                        "explanation": summary.get("explanation", ""),
+                        "findings": [],
+                        "retries": retries_seen,
+                    })
                 log_usage()
         except asyncio.TimeoutError:
             yield _sse({"type": "error", "message": "Run exceeded 3 minute budget; aborted with partial results"})

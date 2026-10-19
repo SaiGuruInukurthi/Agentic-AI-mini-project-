@@ -24,7 +24,7 @@ with httpx.Client(timeout=240) as client:
                 f = ev["finding"]
                 print(f"finding: {f['url']} | cred {f['credibility']} | {f['stance']} ({f['confidence']})")
             elif ev["type"] == "result":
-                print(f"RESULT: {ev['verdict']} (score {ev['score']})")
+                print(f"RESULT: {ev['verdict']} (score {ev['score']}, retries {ev.get('retries', 0)})")
                 print("explanation:", ev["explanation"][:300])
             elif ev["type"] == "error":
                 print("ERROR:", ev["message"])

@@ -32,3 +32,9 @@ Findings:
 {findings}
 
 Respond with JSON: {{"explanation": "your explanation"}}"""
+
+EXTRACT_PROMPT = """Extract up to 3 separate checkable factual claims from the text below. If the text is already one short claim, return it unchanged as the only claim. Ignore opinions, questions, and commands.
+
+Text: {text}
+
+Respond with JSON: {{"claims": ["claim 1", "claim 2", "claim 3"], "notice": "empty string, or a short note if the text contained more claims than you kept"}}"""

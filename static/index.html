@@ -40,18 +40,8 @@
   <button id="checkBtn">Check</button>
 
   <div id="progress"></div>
-
-  <div id="resultCard" class="card hidden">
-    <span id="verdictBadge" class="badge"></span><span id="score" class="score"></span>
-    <p id="explanation"></p>
-  </div>
-
-  <div id="sourceCard" class="card hidden">
-    <table>
-      <thead><tr><th>#</th><th>Source</th><th>Credibility</th><th>Stance</th><th>Quote</th></tr></thead>
-      <tbody id="sourceRows"></tbody>
-    </table>
-  </div>
+  <div id="notice" class="card hidden" style="border-color:#d69a2b;"></div>
+  <div id="results"></div>
 </main>
 
 <script>
@@ -68,23 +58,28 @@ function esc(s) { const d = document.createElement("div"); d.textContent = s ?? 
 
 function addFinding(f) {
   findings.push(f);
-  const row = document.createElement("tr");
-  row.innerHTML = `<td>${findings.length}</td>` +
-    `<td><a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.title || f.url)}</a></td>` +
-    `<td><span class="bar"><i style="width:${Math.round((f.credibility ?? 0) * 100)}%"></i></span> ${f.credibility ?? 0}</td>` +
-    `<td><span class="stance-${esc(f.stance)}">${esc(f.stance)}</span></td>` +
-    `<td>${f.quote ? `<blockquote>${esc(f.quote)}</blockquote>` : esc(f.critique_note || "")}</td>`;
-  $("sourceRows").appendChild(row);
-  $("sourceCard").classList.remove("hidden");
 }
 
 function showResult(r) {
-  const b = $("verdictBadge");
-  b.textContent = r.verdict;
-  b.className = "badge " + esc(r.verdict);
-  $("score").textContent = `score ${r.score}`;
-  $("explanation").textContent = r.explanation;
-  $("resultCard").classList.remove("hidden");
+  const card = document.createElement("div");
+  card.className = "card";
+  let table = "";
+  if (findings.length) {
+    const rows = findings.map((f, i) =>
+      `<tr><td>${i + 1}</td>` +
+      `<td><a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.title || f.url)}</a></td>` +
+      `<td><span class="bar"><i style="width:${Math.round((f.credibility ?? 0) * 100)}%"></i></span> ${f.credibility ?? 0}</td>` +
+      `<td><span class="stance-${esc(f.stance)}">${esc(f.stance)}</span></td>` +
+      `<td>${f.quote ? `<blockquote>${esc(f.quote)}</blockquote>` : esc(f.critique_note || "")}</td></tr>`
+    ).join("");
+    table = `<table><thead><tr><th>#</th><th>Source</th><th>Credibility</th><th>Stance</th><th>Quote</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  const retry = r.retries ? `<div class="score">after ${r.retries} retry</div>` : "";
+  card.innerHTML = `<span class="badge ${esc(r.verdict)}">${esc(r.verdict)}</span>` +
+    `<span class="score">${r.claim}</span><span class="score">score ${r.score}</span>${retry}` +
+    `<p>${esc(r.explanation)}</p>${table}`;
+  $("results").appendChild(card);
+  findings = [];
 }
 
 async function run() {
@@ -92,10 +87,9 @@ async function run() {
   if (!text) { alert("Paste a claim first."); return; }
   $("checkBtn").disabled = true;
   $("progress").innerHTML = "";
-  $("sourceRows").innerHTML = "";
+  $("results").innerHTML = "";
+  $("notice").classList.add("hidden");
   findings = [];
-  $("resultCard").classList.add("hidden");
-  $("sourceCard").classList.add("hidden");
 
   try {
     const res = await fetch("/check", {
@@ -123,6 +117,9 @@ async function run() {
           addFinding(ev.finding);
         } else if (ev.type === "result") {
           showResult(ev);
+        } else if (ev.type === "notice") {
+          $("notice").textContent = ev.message;
+          $("notice").classList.remove("hidden");
         } else if (ev.type === "error") {
           addProgress("ERROR: " + ev.message);
           $("progress").lastChild.classList.add("error");

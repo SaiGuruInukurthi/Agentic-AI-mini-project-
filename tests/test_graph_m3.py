@@ -38,8 +38,13 @@ class FakeMCP:
 
 
 async def fake_chat_json(client, messages, schema, max_tokens=600):
+    from app.graph import Explanation
+    from app.nodes import QueryRewrite, ReadSummary
+
     if schema is ReadSummary:
         return ReadSummary(summary="fake summary")
+    if schema is QueryRewrite:
+        return QueryRewrite(query="refined fact check query")
     if schema.__name__ == "Explanation":
         from app.graph import Explanation
 

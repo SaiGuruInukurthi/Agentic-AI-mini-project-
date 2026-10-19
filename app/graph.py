@@ -7,14 +7,12 @@ from pydantic import BaseModel, Field
 
 from .llm import AsyncGroq, chat_json
 from .mcp_client import MCPManager
-from .nodes import critique_agent, read_agent, search_agent
+from .nodes import MAX_SOURCES, critique_agent, read_agent, rewrite_query, search_agent
 from .prompts import SUMMARIZER_PROMPT
 from .state import Source, State
 from .verdict import compute_verdict, format_findings_for_llm
 
 log = logging.getLogger("factchecker.graph")
-
-MAX_SOURCES = 5
 
 
 async def extract_claims_node(state: State) -> dict:
@@ -23,7 +21,8 @@ async def extract_claims_node(state: State) -> dict:
 
 def make_search_node(mcp: MCPManager):
     async def search_node(state: State) -> dict:
-        sources = await search_agent(mcp, state["claim"], top_n=MAX_SOURCES)
+        query = state.get("search_query") or state["claim"]
+        sources = await search_agent(mcp, query, top_n=MAX_SOURCES)
         return {"sources": sources}
 
     return search_node
@@ -91,15 +90,38 @@ def make_summarize_node(client: AsyncGroq):
     return summarize_node
 
 
+def make_prep_retry_node(client: AsyncGroq):
+    async def prep_retry_node(state: State) -> dict:
+        current = state.get("search_query") or state["claim"]
+        refined = await rewrite_query(client, current)
+        log.info("Retry %d with refined query: %s", state.get("retries", 0) + 1, refined)
+        return {"retries": state.get("retries", 0) + 1, "search_query": refined}
+
+    return prep_retry_node
+
+
+def route_after_summarize(state: State) -> str:
+    if state.get("retries", 0) >= 1:
+        return END
+    verdict = state.get("verdict")
+    findings = state.get("findings", [])
+    credible = len([f for f in findings if f["credibility"] >= 0.6])
+    if verdict == "Unverifiable" or (verdict == "Mixed" and credible < 2):
+        return "prep_retry"
+    return END
+
+
 def build_graph(mcp: MCPManager, client: AsyncGroq):
     g = StateGraph(State)
     g.add_node("extract_claims", extract_claims_node)
     g.add_node("search", make_search_node(mcp))
     g.add_node("branch", make_branch(mcp, client))
     g.add_node("summarize", make_summarize_node(client))
+    g.add_node("prep_retry", make_prep_retry_node(client))
     g.add_edge(START, "extract_claims")
     g.add_edge("extract_claims", "search")
     g.add_conditional_edges("search", make_fan_out, ["branch", "summarize"])
     g.add_edge("branch", "summarize")
-    g.add_edge("summarize", END)
+    g.add_conditional_edges("summarize", route_after_summarize, ["prep_retry", END])
+    g.add_edge("prep_retry", "search")
     return g.compile()

@@ -34,10 +34,12 @@ class FakeMCP:
 
 async def fake_chat_json(client, messages, schema, max_tokens=600):
     from app.graph import Explanation
-    from app.nodes import ReadSummary
+    from app.nodes import ExtractedClaims, ReadSummary
 
     if schema is ReadSummary:
         return ReadSummary(summary="fake summary")
+    if schema is ExtractedClaims:
+        return ExtractedClaims(claims=["test claim"], notice="")
     if schema is Explanation:
         return Explanation(explanation="fake explanation")
     from app.nodes import Critique

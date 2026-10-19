@@ -8,12 +8,13 @@ from mcp_servers.evidence_core import claim_keywords, quote_in_passages
 
 from .llm import AsyncGroq, chat_json
 from .mcp_client import MCPManager, dedupe_by_domain
-from .prompts import CRITIQUE_PROMPT, READ_PROMPT
+from .prompts import CRITIQUE_PROMPT, EXTRACT_PROMPT, QUERY_REWRITE_PROMPT, READ_PROMPT
 from .state import Finding, Source
 
 log = logging.getLogger("factchecker.nodes")
 
 MAX_SOURCES = 5
+MAX_CLAIMS = 3
 PASSAGES_TOKEN_CAP = 1200
 CHARS_PER_TOKEN = 4
 MAX_PASSAGES_CHARS = PASSAGES_TOKEN_CAP * CHARS_PER_TOKEN
@@ -28,6 +29,37 @@ class Critique(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     quote: str
     note: str
+
+
+class ExtractedClaims(BaseModel):
+    claims: list[str] = Field(max_length=MAX_CLAIMS)
+    notice: str = ""
+
+
+class QueryRewrite(BaseModel):
+    query: str
+
+
+async def extract_claims_llm(client: AsyncGroq, text: str) -> tuple[list[str], str]:
+    result = await chat_json(
+        client,
+        [{"role": "user", "content": EXTRACT_PROMPT.format(text=text)}],
+        ExtractedClaims,
+        max_tokens=600,
+    )
+    if result is None:
+        return [text], ""
+    return result.claims[:MAX_CLAIMS], result.notice
+
+
+async def rewrite_query(client: AsyncGroq, query: str) -> str:
+    result = await chat_json(
+        client,
+        [{"role": "user", "content": QUERY_REWRITE_PROMPT.format(query=query)}],
+        QueryRewrite,
+        max_tokens=600,
+    )
+    return result.query if result else query
 
 
 async def search_agent(mcp: MCPManager, claim: str, top_n: int = MAX_SOURCES) -> list[Source]:
