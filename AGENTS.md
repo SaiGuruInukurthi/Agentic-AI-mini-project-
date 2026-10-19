@@ -39,7 +39,7 @@ The Groq free tier is limited and cannot be refilled. Treat every live call as e
 
 - **Keep live testing minimal.** Do not run the full pipeline repeatedly.
 - Prefer tests that need **no API calls**: unit tests for `verdict.py`, the quote-in-passages check, credibility rules, passage extraction, and the evidence MCP server.
-- For graph and UI work, use **mocked or recorded LLM responses** (fixtures in `tests/fixtures/`) instead of real calls.
+- For graph and UI work, use **mocked or recorded LLM responses** (fixtures in `tests/fixtures/`) instead of real calls, or use the **▶ Demo replay** button in the UI which replays the latest `logs/` trace via `GET /demo` with zero tokens.
 - Never put LLM calls inside loops, retries without a cap, or startup code.
 - Maximum **one live end-to-end run at a time**, with a single claim and the minimum number of sources needed to check the behavior. Run it only when a milestone's acceptance check requires it.
 - Do not "try again to see if it works". If a live run fails, read the error, report it, and wait.
@@ -50,6 +50,7 @@ The Groq free tier is limited and cannot be refilled. Treat every live call as e
 ## 4. Run traces (logs/)
 
 - Every API request or CLI run writes `logs/<timestamp>_<label>.jsonl` (gitignored, never committed): user input, every MCP search/fetch/evidence call, every LLM prompt + raw response + per-call usage, per-source findings, verdicts, errors.
+- The **▶ Demo replay** button (and `GET /demo`) replays the newest trace as SSE so the UI can be tested without consuming tokens.
 - **Read these files after live runs to assess model quality** (does critique quote real passages? are read summaries on-topic?). `app/trace.py` is a no-op until `start_run()` is called, so tests stay silent.
 
 ## 5. Workflow
@@ -75,6 +76,7 @@ The Groq free tier is limited and cannot be refilled. Treat every live call as e
 | Run unit tests (no API) | `& "C:\Users\IC1807\anaconda3\envs\mini\python.exe" -m pytest tests -q` |
 | Install a package | `& "C:\Users\IC1807\anaconda3\envs\mini\python.exe" -m pip install <package>` |
 | Run backend (M5+) | `& "C:\Users\IC1807\anaconda3\envs\mini\python.exe" -m uvicorn app.main:app --reload` |
+| Replay latest trace (no API) | Open http://127.0.0.1:8000 and press **▶ Demo replay**, or `GET /demo?file=...` |
 | MCP smoke test (no API) | `& "C:\Users\IC1807\anaconda3\envs\mini\python.exe" samples\smoke_mcp.py` |
 
 Skills provide specialized instructions and workflows for specific tasks.

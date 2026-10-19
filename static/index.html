@@ -64,8 +64,15 @@ svg { display: block; min-width: 680px; width: 100%; height: auto; overflow: vis
 .e-done { stroke: var(--green); }
 .e-retry { stroke-dasharray: 5 4; stroke: var(--muted); marker-end: url(#arrow-grey); }
 
-/* Activity */
-.activity { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); min-height: 1.4em; padding: 6px 0; }
+/* Activity log */
+.activity-log { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); }
+.activity-log summary { cursor: pointer; padding: 6px 0; list-style: none; }
+.activity-log summary::-webkit-details-marker { display: none; }
+.activity-log summary::before { content: "▸ "; display: inline-block; transition: transform 0.15s; }
+.activity-log[open] summary::before { transform: rotate(90deg); }
+.activity-log ul { list-style: none; max-height: 240px; overflow-y: auto; border-top: 1px solid var(--line); padding: 6px 0; margin-top: 4px; }
+.activity-log li { padding: 3px 0 3px 14px; border-left: 2px solid var(--line); margin: 2px 0; }
+.activity-log li.current { border-left-color: var(--accent); color: var(--ink); }
 .activity-label { font-family: var(--mono); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 2px; }
 
 /* Result card */
@@ -128,7 +135,10 @@ svg { display: block; min-width: 680px; width: 100%; height: auto; overflow: vis
     <div class="card-label">Pipeline</div>
     <div class="pipeline-wrap" id="pipeline"></div>
     <div class="activity-label">Activity</div>
-    <div class="activity" id="activity">Idle</div>
+    <details class="activity-log" id="activity-log">
+      <summary id="activity-summary">Idle</summary>
+      <ul id="activity-steps"></ul>
+    </details>
   </div>
 
   <div id="results"></div>
@@ -294,9 +304,22 @@ function connect(url) {
   };
 }
 
+function updateActivity(text) {
+  const summary = document.getElementById("activity-summary");
+  const list = document.getElementById("activity-steps");
+  summary.textContent = text;
+  const li = document.createElement("li");
+  li.textContent = text;
+  li.className = "current";
+  const prev = list.querySelector("li.current");
+  if (prev) prev.classList.remove("current");
+  list.appendChild(li);
+  list.scrollTop = list.scrollHeight;
+}
+
 function handleEvent(d) {
-  const act = document.getElementById("activity");
-  act.textContent = d.detail || d.message || "";
+  const text = d.detail || d.message || "";
+  if (text) updateActivity(text);
 
   if (d.type === "progress") {
     if (d.node === "extract_claims") { setNodeState("extract", "done"); setNodeState("search", "active"); }

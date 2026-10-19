@@ -18,6 +18,8 @@ python -m uvicorn app.main:app --reload
 # open http://127.0.0.1:8000
 ```
 
+Paste a claim and press **Check claim**, or press **▶ Demo replay** to replay the latest recorded run from `logs/` with zero tokens consumed.
+
 ## Tests (no API calls)
 
 ```
