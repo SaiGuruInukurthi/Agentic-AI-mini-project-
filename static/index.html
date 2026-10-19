@@ -91,6 +91,18 @@ svg { display: block; min-width: 680px; width: 100%; height: auto; overflow: vis
 .explanation { font-size: 0.82rem; color: var(--muted); line-height: 1.55; margin-bottom: 12px; }
 .retries-tag { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); margin-top: 8px; }
 
+/* Sources table */
+.sources-details { margin-top: 14px; border-top: 1.5px solid var(--line); padding-top: 10px; }
+.sources-details summary { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); cursor: pointer; list-style: none; }
+.sources-details summary::-webkit-details-marker { display: none; }
+.sources-details summary::before { content: "▸ "; display: inline-block; }
+.sources-details[open] summary::before { transform: rotate(90deg); }
+.sources-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.78rem; }
+.sources-table th { font-family: var(--mono); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); text-align: left; padding: 5px 8px; border-bottom: 1.5px solid var(--line); }
+.sources-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.sources-table tr:last-child td { border-bottom: none; }
+.source-domain { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+
 /* Findings table */
 .findings { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.78rem; }
 .findings th { font-family: var(--mono); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); text-align: left; padding: 5px 8px; border-bottom: 1.5px solid var(--line); }
@@ -281,10 +293,12 @@ function resetPipeline() {
 
 // ── SSE consumer ──────────────────────────────────────────────────────────
 let eventSource = null;
+let currentFindings = [];
 
 function connect(url) {
   if (eventSource) { eventSource.close(); eventSource = null; }
   resetPipeline();
+  currentFindings = [];
   document.getElementById("results").innerHTML = "";
   document.getElementById("notice").style.display = "none";
   document.getElementById("error-banner").style.display = "none";
@@ -345,6 +359,7 @@ function handleEvent(d) {
   }
   else if (d.type === "finding") {
     const f = d.finding || {};
+    currentFindings.push(f);
     const i = activateRow(f.url || "");
     if (i >= 0) {
       const state = f.stance === "supports" ? "done" : f.stance === "contradicts" ? "error" : "idle";
@@ -359,7 +374,8 @@ function handleEvent(d) {
   else if (d.type === "result") {
     setNodeState("summarize", "done");
     setNodeState("verdict", "active");
-    renderResult(d);
+    renderResult(d, currentFindings);
+    currentFindings = [];
   }
   else if (d.type === "error") {
     const e = document.getElementById("error-banner");
@@ -370,7 +386,44 @@ function handleEvent(d) {
   }
 }
 
-function renderResult(d) {
+function renderSourcesTable(findings) {
+  if (!findings || !findings.length) return "";
+  const rows = findings.map((f, i) => {
+    const url = f.url || "";
+    const title = (f.title || "").trim();
+    let domain = "";
+    try { if (url) domain = new URL(url).hostname.replace(/^www\./, ""); } catch (_) {}
+    const label = title || domain || url;
+    const stance = f.stance || "unclear";
+    const cred = typeof f.credibility === "number" ? f.credibility : 0;
+    return `
+      <tr>
+        <td>[${i + 1}]</td>
+        <td>
+          <a class="source-link" href="${esc(url)}" target="_blank" rel="noopener">${esc(label)}</a>
+          ${title ? `<div class="source-domain">${esc(domain)}</div>` : ""}
+        </td>
+        <td><span class="stance-chip ${stance}">${esc(stance)}</span></td>
+        <td>
+          <div class="cred-bar"><div class="cred-fill" style="width:${Math.round(cred * 100)}%"></div></div>
+          <span style="font-size:0.7rem;color:var(--muted);margin-left:4px">${cred.toFixed(2)}</span>
+        </td>
+        <td class="quote">${esc(f.quote || "")}</td>
+      </tr>
+    `;
+  }).join("");
+  return `
+    <details class="sources-details">
+      <summary>Sources (${findings.length})</summary>
+      <table class="sources-table">
+        <thead><tr><th>#</th><th>Source</th><th>Stance</th><th>Credibility</th><th>Quote</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </details>
+  `;
+}
+
+function renderResult(d, findings) {
   const v = (d.verdict || "").toLowerCase();
   const card = document.createElement("div");
   card.className = `card result-card ${v}`;
@@ -383,6 +436,7 @@ function renderResult(d) {
     </div>
     <div class="explanation" style="margin-top:10px">${esc(d.explanation)}</div>
     ${d.retries ? `<div class="retries-tag">retries: ${d.retries}</div>` : ""}
+    ${renderSourcesTable(findings)}
   `;
   document.getElementById("results").appendChild(card);
   setNodeState("verdict", "done");
@@ -397,6 +451,7 @@ function runCheck() {
   const text = document.getElementById("input").value.trim();
   if (!text) return;
   buildPipeline(3);
+  currentFindings = [];
   fetch("/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) })
     .then(res => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
