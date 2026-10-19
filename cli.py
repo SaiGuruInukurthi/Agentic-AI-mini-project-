@@ -1,46 +1,34 @@
-"""M1/M2 CLI: one claim -> search (MCP) -> read (evidence + LLM) -> critique (LLM) -> print."""
+"""CLI: claim -> LangGraph pipeline (search, fan-out read+critique, verdict+summary) -> print."""
 import asyncio
 import json
 import logging
 import sys
 
+from app.graph import build_graph
 from app.llm import get_client, log_usage
 from app.mcp_client import MCPManager
-from app.nodes import critique_agent, read_agent, search_agent, unclear_finding
 
 logging.basicConfig(level=logging.WARNING, format="%(name)s: %(message)s")
 logging.getLogger("factchecker.llm").setLevel(logging.INFO)
+
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
 async def main(claim: str) -> int:
     client = get_client()
     async with MCPManager() as mcp:
-        sources = await search_agent(mcp, claim, top_n=1)
-        if not sources:
-            print("No sources found; cannot fact-check this claim.")
-            return 1
-        source = sources[0]
-        print(f"\nSource: {source['title']} - {source['url']}")
+        graph = build_graph(mcp, client)
+        final = await graph.ainvoke({"claim": claim, "retries": 0})
 
-        read = await read_agent(mcp, client, claim, source)
-        print(f"Credibility: {read['credibility']} ({read['credibility_reason']})")
-        print(f"Passages kept: {len(read['passages'])} (~{sum(len(p) for p in read['passages']) // 4} tokens)")
-        print(f"Read agent summary: {read['summary'] or '(no summary)'}")
-
-        finding = await critique_agent(
-            client,
-            claim,
-            read["passages"],
-            url=read["url"],
-            title=read["title"],
-            credibility=read["credibility"],
-            credibility_reason=read["credibility_reason"],
-        )
-        if not read["passages"]:
-            finding = unclear_finding(source["url"], source["title"], "fetch failed or page empty")
-
-        print("\nFinding:")
-        print(json.dumps(finding, indent=2))
+        print(f"\nVerdict: {final.get('verdict', 'Unverifiable')} (score {final.get('score', 0.0)})")
+        print(f"\n{final.get('explanation', '')}\n")
+        print("Sources:")
+        for i, f in enumerate(final.get("findings", []), 1):
+            print(f"  [{i}] {f['title']} - {f['url']}")
+            print(f"      credibility {f['credibility']}, stance {f['stance']}, confidence {f['confidence']}")
+            if f["quote"]:
+                print(f"      quote: \"{f['quote']}\"")
         log_usage()
         return 0
 

@@ -40,19 +40,28 @@ class FakeMCP:
 async def fake_chat_json(client, messages, schema, max_tokens=600):
     if schema is ReadSummary:
         return ReadSummary(summary="fake summary")
+    if schema.__name__ == "Explanation":
+        from app.graph import Explanation
+
+        return Explanation(explanation="fake explanation")
     return Critique(stance="supports", confidence=0.7, quote="reliable evidence text here", note="n")
 
 
-def test_five_sources_all_findings_present(monkeypatch):
+def _patch_chat(monkeypatch):
     monkeypatch.setattr("app.nodes.chat_json", fake_chat_json)
+    monkeypatch.setattr("app.graph.chat_json", fake_chat_json)
+
+
+def test_five_sources_all_findings_present(monkeypatch):
+    _patch_chat(monkeypatch)
     from app.graph import build_graph
 
     graph = build_graph(FakeMCP(n_sources=5), client=None)
     state = asyncio.run(graph.ainvoke({"claim": "test claim", "retries": 0}))
     assert len(state["sources"]) == 5
     assert len(state["findings"]) == 5
-    stances = {f["stance"] for f in state["findings"]}
-    assert "supports" in stances
+    assert state["verdict"] == "True"
+    assert state["explanation"] == "fake explanation"
     for f in state["findings"]:
         assert f["url"]
     healthy = [f for f in state["findings"] if "src3" not in f["url"]]
@@ -64,7 +73,7 @@ def test_five_sources_all_findings_present(monkeypatch):
 
 
 def test_failed_fetch_branch_returns_unclear_no_crash(monkeypatch):
-    monkeypatch.setattr("app.nodes.chat_json", fake_chat_json)
+    _patch_chat(monkeypatch)
     from app.graph import build_graph
 
     graph = build_graph(FakeMCP(n_sources=5, dead_index=3), client=None)
@@ -77,7 +86,7 @@ def test_failed_fetch_branch_returns_unclear_no_crash(monkeypatch):
 
 
 def test_fewer_than_two_sources_skips_fanout(monkeypatch):
-    monkeypatch.setattr("app.nodes.chat_json", fake_chat_json)
+    _patch_chat(monkeypatch)
     from app.graph import build_graph
 
     graph = build_graph(FakeMCP(n_sources=1), client=None)

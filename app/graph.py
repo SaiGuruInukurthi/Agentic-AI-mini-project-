@@ -3,11 +3,14 @@ import logging
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
+from pydantic import BaseModel, Field
 
-from .llm import AsyncGroq
+from .llm import AsyncGroq, chat_json
 from .mcp_client import MCPManager
 from .nodes import critique_agent, read_agent, search_agent
+from .prompts import SUMMARIZER_PROMPT
 from .state import Source, State
+from .verdict import compute_verdict, format_findings_for_llm
 
 log = logging.getLogger("factchecker.graph")
 
@@ -57,9 +60,33 @@ def make_branch(mcp: MCPManager, client: AsyncGroq):
     return branch_node
 
 
+class Explanation(BaseModel):
+    explanation: str
+
+
 def make_summarize_node(client: AsyncGroq):
     async def summarize_node(state: State) -> dict:
-        return {}
+        findings = state.get("findings", [])
+        verdict, score = compute_verdict(findings)
+        result = await chat_json(
+            client,
+            [{
+                "role": "user",
+                "content": SUMMARIZER_PROMPT.format(
+                    claim=state["claim"],
+                    verdict=verdict,
+                    score=round(score, 2),
+                    findings=format_findings_for_llm(findings),
+                ),
+            }],
+            Explanation,
+            max_tokens=600,
+        )
+        if result is None:
+            explanation = "Summary unavailable (LLM error or rate limited). Verdict computed from source findings."
+        else:
+            explanation = result.explanation
+        return {"verdict": verdict, "score": round(score, 2), "explanation": explanation}
 
     return summarize_node
 
