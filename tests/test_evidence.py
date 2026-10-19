@@ -77,24 +77,39 @@ class TestExtractPassages:
 
 
 class TestExtractDate:
-    def test_iso(self):
-        assert extract_date("published 2024-06-15 in the archive") == "2024-06-15"
-
-    def test_us_format(self):
-        assert extract_date("Posted on June 15, 2024 by admin") == "2024-06-15"
-
-    def test_eu_format(self):
-        assert extract_date("15 June 2024") == "2024-06-15"
-
-    def test_slash_format(self):
-        assert extract_date("updated 15/06/2024 today") == "2024-06-15"
-
     def test_meta_tag(self):
         html = '<meta property="article:published_time" content="2023-02-01T10:00:00Z">'
         assert extract_date(html) == "2023-02-01"
 
+    def test_time_tag(self):
+        html = '<time datetime="2024-06-15">June 15, 2024</time>'
+        assert extract_date(html) == "2024-06-15"
+
+    def test_body_dates_ignored(self):
+        # Historical figures, cited years, and site clocks must not yield a date.
+        assert extract_date("In 1931 and 1934 many events happened. Updated 15/06/2024. Site clock: October 19, 2026.") is None
+        assert extract_date("published 2024-06-15 in the archive") is None
+
     def test_none(self):
         assert extract_date("no dates here at all") is None
+
+
+class TestCleanPageText:
+    def test_error_marker_stripped(self):
+        from mcp_servers.evidence_core import _clean_page_text
+
+        text = "Real content about the claim. <error>Content truncated for length</error> More content."
+        out = _clean_page_text(text)
+        assert "error" not in out.lower()
+        assert "Real content" in out
+
+    def test_link_list_lines_dropped(self):
+        from mcp_servers.evidence_core import _clean_page_text
+
+        text = "Nav links follow.\nMain Page http://a.org http://b.org http://c.org\nThe claim is true per this study."
+        out = _clean_page_text(text)
+        assert "http://" not in out
+        assert "The claim is true" in out
 
 
 class TestIsRecent:

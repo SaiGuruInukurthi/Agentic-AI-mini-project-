@@ -100,8 +100,23 @@ def _split_chunks(text: str, size: int = 600) -> list[str]:
     return chunks
 
 
+def _clean_page_text(text: str) -> str:
+    # ponytail: line heuristics only; a real DOM parser if junk ever matters more than cost
+    text = re.sub(r"<error>.*?</error>", " ", text, flags=re.DOTALL)
+    text = re.sub(r"<error>.*\Z", " ", text, flags=re.DOTALL)
+    kept = []
+    for line in text.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if s.count("http") >= 3:
+            continue
+        kept.append(s)
+    return "\n".join(kept)
+
+
 def extract_passages(text: str, claim: str, max_passages: int = 4) -> list[str]:
-    chunks = _split_chunks(text)
+    chunks = _split_chunks(_clean_page_text(text))
     if not chunks:
         return []
     keywords = claim_keywords(claim)
@@ -123,19 +138,9 @@ def extract_passages(text: str, claim: str, max_passages: int = 4) -> list[str]:
     return top if top else ranked[:max_passages]
 
 
-DATE_PATTERNS = [
-    r"(\d{4})-(\d{2})-(\d{2})",
-    r"(\d{2})/(\d{2})/(\d{4})",
-    r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})",
-    r"(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})",
-]
-
-MONTHS = {m: i + 1 for i, m in enumerate(
-    ["january", "february", "march", "april", "may", "june", "july",
-     "august", "september", "october", "november", "december"])}
-
-
 def extract_date(text: str) -> str | None:
+    # Trust only explicit publish-time markers. Body dates (historical figures,
+    # cited years) and site-clock widgets caused false recency bonuses.
     for pattern in (
         r'<meta[^>]+(?:property|name)=["\'](?:article:published_time|og:published_time|date|dc:date)["\'][^>]+content=["\'](\d{4}-\d{2}-\d{2})',
         r'<time[^>]+datetime=["\'](\d{4}-\d{2}-\d{2})',
@@ -143,23 +148,6 @@ def extract_date(text: str) -> str | None:
         m = re.search(pattern, text, re.IGNORECASE)
         if m:
             return m.group(1)
-    for pattern in DATE_PATTERNS:
-        m = re.search(pattern, text)
-        if not m:
-            continue
-        try:
-            if pattern == DATE_PATTERNS[0]:
-                y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
-            elif pattern == DATE_PATTERNS[1]:
-                d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
-            elif pattern == DATE_PATTERNS[2]:
-                mo, d, y = MONTHS[m.group(1).lower()], int(m.group(2)), int(m.group(3))
-            else:
-                d, mo, y = int(m.group(1)), MONTHS[m.group(2).lower()], int(m.group(3))
-            date(y, mo, d)
-            return f"{y:04d}-{mo:02d}-{d:02d}"
-        except (ValueError, KeyError):
-            continue
     return None
 
 

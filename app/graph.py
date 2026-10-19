@@ -10,7 +10,7 @@ from .mcp_client import MCPManager
 from .nodes import MAX_SOURCES, critique_agent, read_agent, rewrite_query, search_agent
 from .prompts import SUMMARIZER_PROMPT
 from .state import Source, State
-from .verdict import compute_verdict, format_findings_for_llm
+from .verdict import compute_verdict, format_findings_for_llm, stance_counts, strongest_findings
 
 log = logging.getLogger("factchecker.graph")
 
@@ -29,9 +29,12 @@ def make_search_node(mcp: MCPManager):
 
 
 def make_fan_out(state: State) -> list[Send]:
-    if len(state["sources"]) < 2:
+    existing = {f["url"] for f in state.get("findings", [])}
+    fresh = [s for s in state["sources"] if s["url"] not in existing]
+    if len(fresh) < 2:
+        # Verdicts need >= 2 clear findings; reading 0-1 fresh sources can never change it.
         return [Send("summarize", state)]
-    return [Send("branch", {"claim": state["claim"], "source": s}) for s in state["sources"]]
+    return [Send("branch", {"claim": state["claim"], "source": s}) for s in fresh]
 
 
 def make_branch(mcp: MCPManager, client: AsyncGroq):
@@ -63,9 +66,20 @@ class Explanation(BaseModel):
     explanation: str
 
 
+def dedupe_by_url(findings: list) -> list:
+    seen = set()
+    out = []
+    for f in findings:
+        if f["url"] in seen:
+            continue
+        seen.add(f["url"])
+        out.append(f)
+    return out
+
+
 def make_summarize_node(client: AsyncGroq):
     async def summarize_node(state: State) -> dict:
-        findings = state.get("findings", [])
+        findings = dedupe_by_url(state.get("findings", []))
         verdict, score = compute_verdict(findings)
         result = await chat_json(
             client,
@@ -75,6 +89,8 @@ def make_summarize_node(client: AsyncGroq):
                     claim=state["claim"],
                     verdict=verdict,
                     score=round(score, 2),
+                    counts=stance_counts(findings),
+                    strongest=strongest_findings(findings),
                     findings=format_findings_for_llm(findings),
                 ),
             }],
@@ -105,8 +121,8 @@ def route_after_summarize(state: State) -> str:
     if state.get("retries", 0) >= 1:
         return END
     verdict = state.get("verdict")
-    findings = state.get("findings", [])
-    credible = len([f for f in findings if f["credibility"] >= 0.6])
+    findings = dedupe_by_url(state.get("findings", []))
+    credible = len([f for f in findings if f["stance"] != "unclear" and f["credibility"] >= 0.6])
     if verdict == "Unverifiable" or (verdict == "Mixed" and credible < 2):
         return "prep_retry"
     return END

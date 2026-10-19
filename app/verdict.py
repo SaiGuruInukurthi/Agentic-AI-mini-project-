@@ -10,6 +10,8 @@ def compute_score(findings: list[Finding]) -> float:
     num = 0.0
     den = 0.0
     for f in findings:
+        if f["stance"] == "unclear":
+            continue
         weight = f["credibility"] * f["confidence"]
         if weight <= 0:
             continue
@@ -40,3 +42,29 @@ def format_findings_for_llm(findings: list[Finding]) -> str:
             f"stance {f['stance']}, confidence {f['confidence']}. Quote: \"{f['quote']}\". {f['critique_note']}"
         )
     return "\n".join(lines) if lines else "No usable findings."
+
+
+def stance_counts(findings: list[Finding]) -> str:
+    counts = {"supports": 0, "contradicts": 0, "unclear": 0}
+    for f in findings:
+        counts[f["stance"]] += 1
+    return f"supports {counts['supports']}, contradicts {counts['contradicts']}, unclear {counts['unclear']}"
+
+
+def strongest_findings(findings: list[Finding]) -> str:
+    best: dict[str, tuple[int, float, Finding]] = {}
+    for i, f in enumerate(findings, 1):
+        if f["stance"] == "unclear":
+            continue
+        weight = f["credibility"] * f["confidence"]
+        if f["stance"] not in best or weight > best[f["stance"]][1]:
+            best[f["stance"]] = (i, weight, f)
+    lines = []
+    for stance in ("supports", "contradicts"):
+        if stance in best:
+            i, _, f = best[stance]
+            lines.append(
+                f"[{i}] {f['title']} ({f['url']}) - stance {stance}, credibility {f['credibility']}, "
+                f"confidence {f['confidence']}. Quote: \"{f['quote']}\""
+            )
+    return "\n".join(lines) if lines else "None."

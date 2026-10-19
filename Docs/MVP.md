@@ -178,7 +178,7 @@ The critique agent receives only `{claim, passages}`. It never receives the Read
 |---|---|---|---|
 | `extract_passages` | `text`, `claim`, `max_passages=4` | list of passages | Split into chunks of about 600 chars, score by keyword overlap with claim (simple BM25 or TF-IDF is fine), return top N. Keeps LLM context small |
 | `source_credibility` | `url` | `{score, reason}` | Rule-based, see Section 9 |
-| `extract_date` | `text` | ISO date or null | Regex for common date patterns and meta tags |
+| `extract_date` | `text` | ISO date or null | Only `<meta>` publish-time tags and `<time datetime>`; body dates and site clocks are ignored (they caused false recency bonuses) |
 
 Keep this server small. It exists so that the heavy lifting is deterministic and the small model only does judgment.
 
@@ -201,7 +201,8 @@ Keep this server small. It exists so that the heavy lifting is deterministic and
 ```
 sign(stance) = +1 supports, -1 contradicts, 0 unclear
 weight       = credibility * confidence
-score        = sum(sign * weight) / sum(weight)      # range -1 to +1
+score        = sum(sign * weight over findings with stance != unclear)
+             / sum(weight over findings with stance != unclear)      # range -1 to +1
 ```
 
 | Condition | Verdict |
@@ -230,9 +231,9 @@ flowchart TD
 After the summarizer, a conditional edge checks:
 
 - verdict is Unverifiable, **or**
-- verdict is Mixed and total credible findings (credibility >= 0.6) is fewer than 2
+- verdict is Mixed and total credible findings (credibility >= 0.6 **and** a clear stance) is fewer than 2
 
-If true and `retries < 1`: increment `retries`, ask the LLM for a refined search query (rephrase, add "fact check", add key entities), and go back to `search_agent`. Keep old findings and append new ones. Otherwise finish.
+If true and `retries < 1`: increment `retries`, ask the LLM for a refined search query (rephrase, add "fact check", add key entities), and go back to `search_agent`. Keep old findings and append new ones. The retry round skips any URL that already has a finding, so sources are never read twice. Otherwise finish.
 
 ```mermaid
 stateDiagram-v2
@@ -304,7 +305,7 @@ flowchart LR
 
 ## 13. Error handling rules
 
-- Fetch fails or times out (10s): branch returns a Finding with `stance="unclear"`, `confidence=0`, and a note. Never crash the run.
+- Fetch fails or times out (10s): branch returns a Finding with `stance="unclear"`, `confidence=0`, and a note. Never crash the run. The branch keeps the **domain** credibility (a 403 on a trusted outlet is still trusted) with note "page could not be read", and makes **zero LLM calls** for that source.
 - LLM returns invalid JSON: retry once with a stricter reminder, then fall back to `unclear`.
 - Groq returns 429 or times out: follow the backoff rules in Section 3.1, then fall back to `unclear` with a "rate limited" note.
 - Missing `GROQ_API`: fail at startup with a clear message, before any request is accepted.
@@ -387,3 +388,7 @@ All deviations were forced by the environment and verified before adoption; deta
 | 5 | State schema fixed | `search_query` added to `State` | The retry loop needs to hand the rewritten query from `prep_retry` back to `search_agent` |
 | 6 | Credibility: unknown domains 0.5 | Unknown non-HTTPS domains 0.4 | Spec is silent on plain-HTTP unknowns; scored slightly below HTTPS unknowns |
 | 7 | Single model for all calls | Model routing: `gpt-oss-120b` for summarizer / query rewrite / claim extraction, `gpt-oss-20b` for read + critique, `qwen/qwen3.8-27b` as fallback | Free-tier limits are per model (separate 200K TPD buckets), so routing roughly doubles daily capacity and puts the stronger model where reasoning matters (added 19-10-2026) |
+| 8 | Score denominator over all findings | Denominator over clear-stance findings only (`stance != unclear`) | Unclear findings (~1/3 of weight in the live trace) diluted scores toward 0 and flipped a deserved False to Mixed; trace-verified fix (added 19-10-2026) |
+| 9 | Retry re-reads all sources | Retry skips URLs that already have a finding; findings deduped by URL | Round 2 re-fetched and double-counted 4 URLs in the live trace, diluting the score (added 19-10-2026) |
+| 10 | Fetch failure degrades to cred 0.3 | Fetch failure keeps domain credibility, skips read+critique LLM calls | A 403 on Britannica (0.8) is still Britannica; error text was being fed to both LLMs (~10 wasted calls per run) (added 19-10-2026) |
+| 11 | `extract_date`: body regexes + meta tags | Meta/`<time>` tags only | Body dates (1931, 1934) and site-clock widgets got false +0.05 recency bonuses (added 19-10-2026) |

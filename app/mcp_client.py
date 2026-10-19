@@ -14,6 +14,7 @@ from . import trace
 
 SEARCH_TOOL = "search"
 FETCH_TOOL = "fetch"
+FETCH_ERROR_PREFIX = "Error executing tool fetch"
 SEARCH_SERVER = Path(__file__).resolve().parent.parent / "mcp_servers" / "search_server.py"
 EVIDENCE_SERVER = Path(__file__).resolve().parent.parent / "mcp_servers" / "evidence_server.py"
 
@@ -56,9 +57,11 @@ class MCPManager:
 
     async def fetch_page(self, url: str) -> str:
         trace.event("mcp_fetch", url=url)
-        res = await self.fetch.call_tool(FETCH_TOOL, {"url": url, "max_length": 10000})
+        res = await self.fetch.call_tool(FETCH_TOOL, {"url": url, "max_length": 20000})
         text = res.content[0].text if res.content else ""
         trace.event("mcp_fetch_result", url=url, chars=len(text), text=text)
+        if text.startswith(FETCH_ERROR_PREFIX):
+            return ""
         return text
 
     async def extract_passages(self, text: str, claim: str, max_passages: int = 4) -> list[str]:

@@ -69,6 +69,24 @@ class TestComputeVerdict:
         score = compute_score(findings)
         assert -1.0 <= score <= 1.0
 
+    def test_unclear_does_not_dilute(self):
+        findings = [
+            f("contradicts", 0.8, 0.95),
+            f("contradicts", 0.5, 0.95),
+            f("supports", 0.5, 0.95),
+            f("unclear", 0.8, 0.9),
+            f("unclear", 0.5, 0.9),
+        ]
+        verdict, score = compute_verdict(findings)
+        assert verdict == "False"
+        assert abs(score - (-0.76 / 1.71)) < 1e-9
+
+    def test_unclear_only_gives_zero_score(self):
+        findings = [f("unclear", 0.8, 0.9), f("unclear", 0.5, 0.9)]
+        verdict, score = compute_verdict(findings)
+        assert verdict == "Unverifiable"
+        assert score == 0.0
+
 
 class TestFormat:
     def test_format_lists_findings(self):

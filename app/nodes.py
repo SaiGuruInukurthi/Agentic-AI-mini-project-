@@ -96,12 +96,15 @@ async def read_agent(mcp: MCPManager, client: AsyncGroq, claim: str, source: Sou
         log.warning("Fetch failed for %s: %s", url, e)
         page_text = ""
     if not page_text:
+        # Fetch failed or returned an error page: keep the domain credibility (e.g. a
+        # 403 on a trusted outlet is still a trusted outlet) and skip all LLM calls.
+        cred = await mcp.source_credibility(url)
         return {
             "url": url,
             "title": title,
             "passages": [],
-            "credibility": 0.3,
-            "credibility_reason": "page empty or fetch failed",
+            "credibility": cred["score"],
+            "credibility_reason": f"{cred['reason']}; page could not be read",
             "summary": "",
         }
 
