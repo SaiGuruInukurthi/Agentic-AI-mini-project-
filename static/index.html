@@ -5,135 +5,421 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fact-Checker</title>
 <style>
-  :root { --bg:#f6f7f9; --card:#fff; --ink:#1c2330; --muted:#66707f; --line:#e3e6eb; }
-  * { box-sizing:border-box; }
-  body { margin:0; padding:24px; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--ink); }
-  main { max-width:760px; margin:0 auto; }
-  h1 { font-size:1.4rem; margin:0 0 12px; }
-  textarea { width:100%; min-height:90px; padding:12px; font:inherit; border:1px solid var(--line); border-radius:8px; resize:vertical; }
-  button { margin-top:10px; padding:10px 22px; font:inherit; font-weight:600; color:#fff; background:#2b5fd9; border:0; border-radius:8px; cursor:pointer; }
-  button:disabled { background:#9db2e3; cursor:default; }
-  #progress { margin-top:16px; font-size:.9rem; color:var(--muted); }
-  #progress div { padding:2px 0; }
-  #progress div::before { content:"\2022 "; color:#2b5fd9; }
-  .card { margin-top:20px; padding:16px 20px; background:var(--card); border:1px solid var(--line); border-radius:10px; }
-  .badge { display:inline-block; padding:4px 14px; border-radius:999px; color:#fff; font-weight:700; letter-spacing:.3px; }
-  .badge.True { background:#1e9e4a; } .badge.False { background:#d64545; }
-  .badge.Mixed { background:#d69a2b; } .badge.Unverifiable { background:#8a919c; }
-  .score { margin-left:10px; color:var(--muted); font-size:.9rem; }
-  #explanation { margin:10px 0 0; line-height:1.5; }
-  table { width:100%; border-collapse:collapse; margin-top:14px; font-size:.88rem; }
-  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
-  .bar { position:relative; width:90px; height:8px; background:#eceef2; border-radius:4px; display:inline-block; }
-  .bar i { position:absolute; inset:0 auto 0 0; background:#2b5fd9; border-radius:4px; }
-  .stance-supports { color:#1e9e4a; font-weight:600; } .stance-contradicts { color:#d64545; font-weight:600; }
-  .stance-unclear { color:#8a919c; font-weight:600; }
-  blockquote { margin:4px 0 0; padding-left:10px; border-left:3px solid var(--line); color:var(--muted); font-style:italic; }
-  .hidden { display:none; }
-  .error { color:#d64545; font-weight:600; }
+:root {
+  --bg: #f2f3f1;
+  --card: #fff;
+  --ink: #1a1f2b;
+  --muted: #6b7280;
+  --line: #dde1d8;
+  --accent: #1e3a5f;
+  --green: #1a7f4b;
+  --red: #b3372e;
+  --amber: #b07a1f;
+  --grey: #6b7280;
+  --pulse: #ffd84d;
+  --mono: "Cascadia Code", "Fira Code", ui-monospace, monospace;
+  --sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--sans); min-height: 100vh; }
+
+.wrap { max-width: 860px; margin: 0 auto; padding: 32px 24px 80px; }
+
+/* Header */
+h1 { font-size: 1.65rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px; }
+.tag { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 24px; }
+
+/* Cards */
+.card { background: var(--card); border: 1.5px solid var(--line); border-radius: 10px; padding: 20px 22px; margin-bottom: 18px; }
+.card-label { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 12px; }
+
+/* Input */
+textarea { width: 100%; min-height: 80px; resize: vertical; border: 1.5px solid var(--line); border-radius: 8px; padding: 14px; font-family: var(--sans); font-size: 0.92rem; line-height: 1.55; outline: none; transition: border-color 0.15s; }
+textarea:focus { border-color: var(--accent); }
+.btn-row { display: flex; gap: 10px; margin-top: 12px; }
+button { border: none; border-radius: 7px; padding: 10px 22px; font-family: var(--sans); font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: opacity 0.15s, transform 0.1s; }
+button:hover:not(:disabled) { opacity: 0.88; }
+button:active:not(:disabled) { transform: scale(0.97); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-demo { background: var(--pulse); color: var(--ink); }
+
+/* Pipeline SVG */
+.pipeline-wrap { overflow-x: auto; padding: 8px 0 4px; }
+svg { display: block; min-width: 520px; width: 100%; height: auto; }
+
+/* Node styles */
+.n-box { rx: 7; ry: 7; stroke-width: 1.6; transition: all 0.25s; }
+.n-idle { fill: #f8f9f7; stroke: var(--line); }
+.n-active { fill: var(--pulse); stroke: var(--amber); stroke-width: 2.2; }
+.n-done { fill: #e2f0e6; stroke: var(--green); }
+.n-error { fill: #fde8e6; stroke: var(--red); }
+.n-verdict { stroke-width: 2.4; }
+.n-label { font-family: var(--mono); font-size: 11px; fill: var(--ink); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.n-sub { font-family: var(--mono); font-size: 9px; fill: var(--muted); text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+
+/* Edge styles */
+.e-line { stroke: var(--line); stroke-width: 1.4; fill: none; marker-end: url(#arrow); transition: stroke 0.3s; }
+.e-active { stroke: var(--amber); stroke-width: 2; }
+.e-done { stroke: var(--green); }
+.e-retry { stroke-dasharray: 5 4; stroke: var(--muted); marker-end: url(#arrow-grey); }
+
+/* Activity */
+.activity { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); min-height: 1.4em; padding: 6px 0; }
+.activity-label { font-family: var(--mono); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 2px; }
+
+/* Result card */
+.result-card { border-left: 4px solid var(--grey); }
+.result-card.true { border-left-color: var(--green); }
+.result-card.false { border-left-color: var(--red); }
+.result-card.mixed { border-left-color: var(--amber); }
+.result-card.unverifiable { border-left-color: var(--grey); }
+.verdict-badge { display: inline-block; font-family: var(--mono); font-size: 0.82rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 3px 12px; border-radius: 5px; border: 2px solid; }
+.verdict-badge.true { color: var(--green); border-color: var(--green); }
+.verdict-badge.false { color: var(--red); border-color: var(--red); }
+.verdict-badge.mixed { color: var(--amber); border-color: var(--amber); }
+.verdict-badge.unverifiable { color: var(--grey); border-color: var(--grey); }
+.score { font-family: var(--mono); font-size: 0.82rem; color: var(--muted); margin-left: 10px; }
+.claim-text { font-size: 0.88rem; margin: 10px 0 8px; line-height: 1.55; }
+.explanation { font-size: 0.82rem; color: var(--muted); line-height: 1.55; margin-bottom: 12px; }
+.retries-tag { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); margin-top: 8px; }
+
+/* Findings table */
+.findings { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.78rem; }
+.findings th { font-family: var(--mono); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); text-align: left; padding: 5px 8px; border-bottom: 1.5px solid var(--line); }
+.findings td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.findings tr:last-child td { border-bottom: none; }
+.stance-chip { font-family: var(--mono); font-size: 0.7rem; font-weight: 600; padding: 1px 7px; border-radius: 4px; }
+.stance-chip.supports { background: #d4edda; color: var(--green); }
+.stance-chip.contradicts { background: #f8d7da; color: var(--red); }
+.stance-chip.unclear { background: #e9ecef; color: var(--grey); }
+.cred-bar { width: 52px; height: 6px; background: var(--line); border-radius: 3px; display: inline-block; vertical-align: middle; }
+.cred-fill { height: 100%; border-radius: 3px; background: var(--accent); }
+.quote { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); font-style: italic; max-width: 200px; }
+.source-link { color: var(--accent); text-decoration: none; font-family: var(--mono); font-size: 0.72rem; }
+.source-link:hover { text-decoration: underline; }
+
+/* Notice / error */
+.notice { background: #fff8e1; border: 1.5px solid var(--amber); border-radius: 8px; padding: 12px 16px; font-size: 0.82rem; margin-bottom: 14px; display: none; }
+.error-banner { background: #fde8e6; border: 1.5px solid var(--red); border-radius: 8px; padding: 12px 16px; font-size: 0.82rem; margin-bottom: 14px; display: none; }
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
-<main>
+<div class="wrap">
   <h1>Fact-Checker</h1>
-  <textarea id="claim" placeholder="Paste a claim or short article to fact-check..."></textarea>
-  <button id="checkBtn">Check</button>
+  <div class="tag">multi-agent verification bench &mdash; LangGraph &middot; Groq &middot; MCP</div>
 
-  <div id="progress"></div>
-  <div id="notice" class="card hidden" style="border-color:#d69a2b;"></div>
+  <div class="card">
+    <div class="card-label">Claim or short article</div>
+    <textarea id="input" placeholder="Paste a claim to fact-check&hellip;"></textarea>
+    <div class="btn-row">
+      <button class="btn-primary" id="check-btn" onclick="runCheck()">Check claim</button>
+      <button class="btn-demo" id="demo-btn" onclick="runDemo()">&#9654; Demo replay</button>
+    </div>
+  </div>
+
+  <div class="notice" id="notice"></div>
+  <div class="error-banner" id="error-banner"></div>
+
+  <div class="card">
+    <div class="card-label">Pipeline</div>
+    <div class="pipeline-wrap" id="pipeline"></div>
+    <div class="activity-label">Activity</div>
+    <div class="activity" id="activity">Idle</div>
+  </div>
+
   <div id="results"></div>
-</main>
+</div>
+
+<svg style="position:absolute;width:0;height:0">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10z" fill="var(--line)"/></marker>
+    <marker id="arrow-grey" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10z" fill="var(--muted)"/></marker>
+    <marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10z" fill="var(--amber)"/></marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10z" fill="var(--green)"/></marker>
+  </defs>
+</svg>
 
 <script>
-const $ = id => document.getElementById(id);
-let findings = [];
+// ── Pipeline SVG ──────────────────────────────────────────────────────────
+const MAX_ROWS = 5;
+const NODE = { EXTRACT: 0, SEARCH: 1, SUMMARIZE: 2, VERDICT: 3 };
+let nodes = {};     // key → {el, label}
+let edges = {};     // key → line element
+let rowNodes = [];  // [{read, critique, edgeReadCrit, edgeCritSum}]
+let urlToRow = {};
 
-function addProgress(detail) {
-  const d = document.createElement("div");
-  d.textContent = detail;
-  $("progress").appendChild(d);
+function svgEl(tag, attrs) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
 }
 
-function esc(s) { const d = document.createElement("div"); d.textContent = s ?? ""; return d.innerHTML; }
+function buildPipeline(nRows) {
+  nRows = Math.max(2, Math.min(nRows || 3, MAX_ROWS));
+  const svg = svgEl("svg", { viewBox: `0 0 560 ${nRows * 72 + 100}`, xmlns: "http://www.w3.org/2000/svg" });
+  const rowH = 72, topPad = 44;
+  const colX = { extract: 30, search: 130, read: 240, critique: 350, summarize: 470, verdict: 530 };
+  const boxW = 82, boxH = 34;
+  const cy = i => topPad + i * rowH;
 
-function addFinding(f) {
-  findings.push(f);
-}
-
-function showResult(r) {
-  const card = document.createElement("div");
-  card.className = "card";
-  let table = "";
-  if (findings.length) {
-    const rows = findings.map((f, i) =>
-      `<tr><td>${i + 1}</td>` +
-      `<td><a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.title || f.url)}</a></td>` +
-      `<td><span class="bar"><i style="width:${Math.round((f.credibility ?? 0) * 100)}%"></i></span> ${f.credibility ?? 0}</td>` +
-      `<td><span class="stance-${esc(f.stance)}">${esc(f.stance)}</span></td>` +
-      `<td>${f.quote ? `<blockquote>${esc(f.quote)}</blockquote>` : esc(f.critique_note || "")}</td></tr>`
-    ).join("");
-    table = `<table><thead><tr><th>#</th><th>Source</th><th>Credibility</th><th>Stance</th><th>Quote</th></tr></thead><tbody>${rows}</tbody></table>`;
-  }
-  const retry = r.retries ? `<div class="score">after ${r.retries} retry</div>` : "";
-  card.innerHTML = `<span class="badge ${esc(r.verdict)}">${esc(r.verdict)}</span>` +
-    `<span class="score">${r.claim}</span><span class="score">score ${r.score}</span>${retry}` +
-    `<p>${esc(r.explanation)}</p>${table}`;
-  $("results").appendChild(card);
-  findings = [];
-}
-
-async function run() {
-  const text = $("claim").value.trim();
-  if (!text) { alert("Paste a claim first."); return; }
-  $("checkBtn").disabled = true;
-  $("progress").innerHTML = "";
-  $("results").innerHTML = "";
-  $("notice").classList.add("hidden");
-  findings = [];
-
-  try {
-    const res = await fetch("/check", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text })
-    });
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const parts = buf.split("\n\n");
-      buf = parts.pop();
-      for (const part of parts) {
-        const line = part.split("\n").find(l => l.startsWith("data: "));
-        if (!line) continue;
-        const ev = JSON.parse(line.slice(6));
-        if (ev.type === "progress") {
-          addProgress(ev.detail);
-        } else if (ev.type === "finding") {
-          addProgress("Done: " + (ev.finding.title || ev.finding.url));
-          addFinding(ev.finding);
-        } else if (ev.type === "result") {
-          showResult(ev);
-        } else if (ev.type === "notice") {
-          $("notice").textContent = ev.message;
-          $("notice").classList.remove("hidden");
-        } else if (ev.type === "error") {
-          addProgress("ERROR: " + ev.message);
-          $("progress").lastChild.classList.add("error");
-        }
-      }
+  function mkBox(key, x, y, w, h, label, sub) {
+    const g = svgEl("g", {});
+    const rect = svgEl("rect", { x, y, width: w, height: h, class: "n-box n-idle", "data-key": key });
+    const txt = svgEl("text", { x: x + w / 2, y: y + h / 2, class: "n-label" });
+    txt.textContent = label;
+    g.appendChild(rect);
+    g.appendChild(txt);
+    if (sub) {
+      const st = svgEl("text", { x: x + w / 2, y: y + h + 11, class: "n-sub" });
+      st.textContent = sub;
+      g.appendChild(st);
     }
-  } catch (e) {
-    addProgress("ERROR: " + e.message);
-  } finally {
-    $("checkBtn").disabled = false;
+    svg.appendChild(g);
+    return rect;
+  }
+
+  function mkEdge(x1, y1, x2, y2, cls, marker) {
+    const line = svgEl("line", { x1, y1, x2, y2, class: cls, "marker-end": `url(#${marker || "arrow"})` });
+    svg.appendChild(line);
+    return line;
+  }
+
+  // Fixed nodes
+  nodes.extract = mkBox("extract", colX.extract, cy(0), boxW, boxH, "Extract", "claims");
+  nodes.search  = mkBox("search",  colX.search,  cy(0), boxW, boxH, "Search", "sources");
+  nodes.summarize = mkBox("summarize", colX.summarize, cy(0), boxW, boxH, "Summarize", "verdict");
+  nodes.verdict = mkBox("verdict", colX.verdict, cy(0), boxW, boxH, "Result", "");
+
+  edges.extractSearch = mkEdge(colX.extract + boxW, cy(0) + boxH / 2, colX.search, cy(0) + boxH / 2, "e-line");
+  edges.searchSummarize = mkEdge(colX.summarize + boxW, cy(0) + boxH / 2, colX.verdict, cy(0) + boxH / 2, "e-line");
+
+  // Branch rows
+  rowNodes = [];
+  urlToRow = {};
+  const startY = cy(1) - rowH / 2;
+
+  for (let i = 0; i < nRows; i++) {
+    const y = cy(i + 1);
+    const read = mkBox(`read-${i}`, colX.read, y, boxW, boxH, "Read", "");
+    const crit = mkBox(`critique-${i}`, colX.critique, y, boxW, boxH, "Critique", "");
+    const eSC = mkEdge(colX.search + boxW, cy(0) + boxH / 2, colX.read, y + boxH / 2, "e-line");
+    const eRC = mkEdge(colX.read + boxW, y + boxH / 2, colX.critique, y + boxH / 2, "e-line");
+    const eCS = mkEdge(colX.critique + boxW, y + boxH / 2, colX.summarize, cy(0) + boxH / 2, "e-line");
+    rowNodes.push({ read, critique: crit, edges: [eSC, eRC, eCS] });
+  }
+
+  // Retry edge (dashed, summarizer back to search)
+  const ry = cy(nRows + 1) + 10;
+  const retryEdge = svgEl("polyline", {
+    points: `${colX.summarize + boxW / 2},${cy(0) + boxH} ${colX.summarize + boxW / 2},${ry} ${colX.search + boxW / 2},${ry} ${colX.search + boxW / 2},${cy(0) + boxH}`,
+    class: "e-retry", "marker-end": "url(#arrow-grey)"
+  });
+  svg.appendChild(retryEdge);
+  const retryLabel = svgEl("text", { x: (colX.search + colX.summarize) / 2 + 20, y: ry - 5, class: "n-sub" });
+  retryLabel.textContent = "retry (max 1)";
+  svg.appendChild(retryLabel);
+  edges.retry = retryEdge;
+
+  document.getElementById("pipeline").innerHTML = "";
+  document.getElementById("pipeline").appendChild(svg);
+}
+
+function setNodeState(key, state) {
+  const el = document.querySelector(`rect[data-key="${key}"]`);
+  if (!el) return;
+  el.classList.remove("n-idle", "n-active", "n-done", "n-error");
+  el.classList.add(`n-${state}`);
+}
+
+function setRowState(i, nodeType, state) {
+  const r = rowNodes[i];
+  if (!r) return;
+  const el = nodeType === "read" ? r.read : r.critique;
+  el.classList.remove("n-idle", "n-active", "n-done", "n-error");
+  el.classList.add(`n-${state}`);
+}
+
+function setEdgeState(edge, state) {
+  if (!edge) return;
+  edge.classList.remove("e-line", "e-active", "e-done");
+  edge.classList.add(state === "active" ? "e-active" : state === "done" ? "e-done" : "e-line");
+  if (state === "done") edge.setAttribute("marker-end", "url(#arrow-green)");
+  else if (state === "active") edge.setAttribute("marker-end", "url(#arrow-amber)");
+  else edge.setAttribute("marker-end", "url(#arrow)");
+}
+
+function activateRow(url) {
+  if (!(url in urlToRow)) {
+    const used = Object.keys(urlToRow).length;
+    if (used < rowNodes.length) urlToRow[url] = used;
+  }
+  return urlToRow[url] ?? -1;
+}
+
+function resetPipeline() {
+  Object.keys(nodes).forEach(k => setNodeState(k, "idle"));
+  rowNodes.forEach((r, i) => { setRowState(i, "read", "idle"); setRowState(i, "critique", "idle"); });
+  setEdgeState(edges.retry, "idle");
+  urlToRow = {};
+}
+
+// ── SSE consumer ──────────────────────────────────────────────────────────
+let eventSource = null;
+
+function connect(url) {
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  resetPipeline();
+  document.getElementById("results").innerHTML = "";
+  document.getElementById("notice").style.display = "none";
+  document.getElementById("error-banner").style.display = "none";
+  document.getElementById("check-btn").disabled = true;
+  document.getElementById("demo-btn").disabled = true;
+  setNodeState("extract", "active");
+
+  eventSource = new EventSource(url);
+  eventSource.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+    handleEvent(d);
+  };
+  eventSource.onerror = () => {
+    eventSource.close(); eventSource = null;
+    document.getElementById("check-btn").disabled = false;
+    document.getElementById("demo-btn").disabled = false;
+  };
+}
+
+function handleEvent(d) {
+  const act = document.getElementById("activity");
+  act.textContent = d.detail || d.message || "";
+
+  if (d.type === "progress") {
+    if (d.node === "extract_claims") { setNodeState("extract", "done"); setNodeState("search", "active"); }
+    else if (d.node === "search") {
+      setNodeState("search", "active");
+      if (d.detail && d.detail.startsWith("Rewriting")) setEdgeState(edges.retry, "active");
+    }
+    else if (d.node === "read" && d.url) {
+      const i = activateRow(d.url);
+      if (i >= 0) { setRowState(i, "read", "active"); setEdgeState(rowNodes[i].edges[0], "active"); }
+      setNodeState("search", "done");
+    }
+    else if (d.node === "critique" && d.url) {
+      const i = activateRow(d.url);
+      if (i >= 0) { setRowState(i, "read", "done"); setRowState(i, "critique", "active"); setEdgeState(rowNodes[i].edges[1], "active"); }
+    }
+    else if (d.node === "branch" && d.url) {
+      const i = activateRow(d.url);
+      if (i >= 0) { setRowState(i, "critique", "done"); setEdgeState(rowNodes[i].edges[2], "active"); }
+    }
+    else if (d.node === "summarize") { setNodeState("summarize", "active"); }
+    else if (d.node === "done") { setNodeState("verdict", "done"); }
+  }
+  else if (d.type === "finding") {
+    const f = d.finding || {};
+    const i = activateRow(f.url || "");
+    if (i >= 0) {
+      const state = f.stance === "supports" ? "done" : f.stance === "contradicts" ? "error" : "idle";
+      setRowState(i, "read", "done");
+      setRowState(i, "critique", "done");
+    }
+  }
+  else if (d.type === "notice") {
+    const n = document.getElementById("notice");
+    n.textContent = d.message; n.style.display = "block";
+  }
+  else if (d.type === "result") {
+    setNodeState("summarize", "done");
+    setNodeState("verdict", "active");
+    renderResult(d);
+  }
+  else if (d.type === "error") {
+    const e = document.getElementById("error-banner");
+    e.textContent = d.message; e.style.display = "block";
+    document.getElementById("check-btn").disabled = false;
+    document.getElementById("demo-btn").disabled = false;
+    if (eventSource) { eventSource.close(); eventSource = null; }
   }
 }
 
-$("checkBtn").addEventListener("click", run);
+function renderResult(d) {
+  const v = (d.verdict || "").toLowerCase();
+  const card = document.createElement("div");
+  card.className = `card result-card ${v}`;
+  card.innerHTML = `
+    <div class="card-label">Claim</div>
+    <div class="claim-text">${esc(d.claim)}</div>
+    <div>
+      <span class="verdict-badge ${v}">${esc(d.verdict)}</span>
+      <span class="score">score ${typeof d.score === "number" ? d.score.toFixed(2) : d.score}</span>
+    </div>
+    <div class="explanation" style="margin-top:10px">${esc(d.explanation)}</div>
+    ${d.retries ? `<div class="retries-tag">retries: ${d.retries}</div>` : ""}
+  `;
+  document.getElementById("results").appendChild(card);
+  setNodeState("verdict", "done");
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────
+function runCheck() {
+  const text = document.getElementById("input").value.trim();
+  if (!text) return;
+  buildPipeline(3);
+  fetch("/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) })
+    .then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      resetPipeline();
+      setNodeState("extract", "active");
+      document.getElementById("check-btn").disabled = true;
+      document.getElementById("demo-btn").disabled = true;
+      document.getElementById("results").innerHTML = "";
+      document.getElementById("notice").style.display = "none";
+      document.getElementById("error-banner").style.display = "none";
+      let buf = "";
+      function pump() {
+        reader.read().then(({ done, value }) => {
+          if (done) {
+            document.getElementById("check-btn").disabled = false;
+            document.getElementById("demo-btn").disabled = false;
+            return;
+          }
+          buf += dec.decode(value, { stream: true });
+          const parts = buf.split("\n\n");
+          buf = parts.pop();
+          for (const p of parts) {
+            const line = p.trim();
+            if (!line.startsWith("data: ")) continue;
+            try { handleEvent(JSON.parse(line.slice(6))); } catch (_) {}
+          }
+          pump();
+        });
+      }
+      pump();
+    })
+    .catch(err => {
+      document.getElementById("error-banner").textContent = err.message;
+      document.getElementById("error-banner").style.display = "block";
+      document.getElementById("check-btn").disabled = false;
+      document.getElementById("demo-btn").disabled = false;
+    });
+}
+
+function runDemo() {
+  buildPipeline(3);
+  connect("/demo");
+}
+
+// Init
+buildPipeline(3);
 </script>
 </body>
 </html>

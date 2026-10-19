@@ -18,6 +18,7 @@ logging.basicConfig(level=logging.WARNING)
 log = logging.getLogger("factchecker.api")
 
 RUN_BUDGET_SECONDS = 180
+LOGS_DIR = Path(__file__).resolve().parent.parent / "logs"
 
 
 @asynccontextmanager
@@ -85,6 +86,7 @@ async def check(request: Request):
                                 finding = update["findings"][-1]
                                 trace.event("finding", finding=finding)
                                 yield _sse({"type": "progress", "node": node,
+                                            "url": finding["url"],
                                             "detail": f"Checked {finding['title'] or finding['url']}"})
                                 yield _sse({"type": "finding", "finding": finding})
                             elif node == "summarize" and update:
@@ -111,6 +113,118 @@ async def check(request: Request):
             yield _sse({"type": "error", "message": f"{type(e).__name__}: {e}"})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.get("/demo")
+async def demo(file: str | None = None):
+    """Replay a recorded run from logs/ as SSE — zero tokens consumed."""
+    log_dir = LOGS_DIR
+    if not log_dir.exists():
+        return StreamingResponse(
+            iter([_sse({"type": "error", "message": "No recorded runs in logs/. Run a check first."})]),
+            media_type="text/event-stream",
+        )
+    files = sorted(log_dir.glob("*.jsonl"))
+    if not files:
+        return StreamingResponse(
+            iter([_sse({"type": "error", "message": "No recorded runs in logs/. Run a check first."})]),
+            media_type="text/event-stream",
+        )
+    path = log_dir / file if file else files[-1]
+    if not path.exists():
+        return StreamingResponse(
+            iter([_sse({"type": "error", "message": f"Trace file not found: {file}"})]),
+            media_type="text/event-stream",
+        )
+
+    events = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+
+    async def replay_stream():
+        for sse in _replay_sse(events):
+            yield sse
+            await asyncio.sleep(0.3)
+
+    return StreamingResponse(replay_stream(), media_type="text/event-stream")
+
+
+def _replay_sse(events: list[dict]):
+    """Convert trace events to the same SSE shapes the frontend expects."""
+    # Extract claims from llm_response (ExtractedClaims schema)
+    claims, notice = None, ""
+    for e in events:
+        if e["kind"] == "llm_response" and "ExtractedClaims" in str(e.get("schema", "")):
+            parsed = e.get("parsed") or {}
+            claims = parsed.get("claims") or None
+            notice = parsed.get("notice") or ""
+            break
+
+    if claims is None:
+        claims = [e["claim"] for e in events if e["kind"] == "claim_result"] or None
+    if not claims:
+        yield _sse({"type": "error", "message": "Trace has no claims to replay."})
+        return
+
+    yield _sse({"type": "progress", "node": "extract_claims",
+                "detail": f"Extracted {len(claims)} claim(s)" + (f" - {notice}" if notice else "")})
+    if notice:
+        yield _sse({"type": "notice", "message": notice})
+
+    # Split events into per-claim segments (ends at claim_result)
+    segments = []
+    current = []
+    for e in events:
+        if e["kind"] == "claim_result":
+            current.append(e)
+            segments.append(current)
+            current = []
+        elif e["kind"] in ("mcp_search", "mcp_search_result", "mcp_fetch", "llm_attempt", "finding"):
+            current.append(e)
+
+    for idx, seg in enumerate(segments, 1):
+        cr = seg[-1]
+        claim = cr["claim"]
+        yield _sse({"type": "progress", "node": "search",
+                    "detail": f"Claim {idx}/{len(segments)}: checking sources"})
+        search_round = 0
+        current_url = None
+        for e in seg:
+            k = e["kind"]
+            if k == "mcp_search":
+                search_round += 1
+                yield _sse({"type": "progress", "node": "search",
+                            "detail": f'Searching: "{e["query"]}"'})
+            elif k == "mcp_search_result":
+                n = e.get("n", 0)
+                label = "Retrying with refined query" if search_round > 1 else "Found"
+                yield _sse({"type": "progress", "node": "search",
+                            "detail": f"{label}: {n} candidate sources"})
+            elif k == "mcp_fetch":
+                current_url = e["url"]
+                yield _sse({"type": "progress", "node": "read", "url": current_url,
+                            "detail": f"Reading {current_url}"})
+            elif k == "llm_attempt":
+                schema = str(e.get("schema", ""))
+                if "Critique" in schema and current_url:
+                    yield _sse({"type": "progress", "node": "critique", "url": current_url,
+                                "detail": "Independent critique"})
+                elif "QueryRewrite" in schema:
+                    yield _sse({"type": "progress", "node": "search",
+                                "detail": "Rewriting search query for retry"})
+                elif "Explanation" in schema:
+                    yield _sse({"type": "progress", "node": "summarize",
+                                "detail": "Writing verdict"})
+            elif k == "finding":
+                f_ = e["finding"]
+                yield _sse({"type": "progress", "node": "branch", "url": f_.get("url", ""),
+                            "detail": f"Checked {f_.get('title') or f_.get('url', '')}"})
+                yield _sse({"type": "finding", "finding": f_})
+        yield _sse({
+            "type": "result", "claim": claim,
+            "verdict": cr["verdict"], "score": cr["score"],
+            "explanation": cr.get("explanation", ""),
+            "findings": [], "retries": cr.get("retries", 0),
+        })
+    yield _sse({"type": "progress", "node": "done", "detail": "Replay finished (no tokens used)"})
 
 
 def _sse(payload: dict) -> str:
