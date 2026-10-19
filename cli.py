@@ -1,4 +1,4 @@
-"""M1 CLI: one claim -> search (MCP) -> one read -> one critique -> print result."""
+"""M1/M2 CLI: one claim -> search (MCP) -> read (evidence + LLM) -> critique (LLM) -> print."""
 import asyncio
 import json
 import logging
@@ -8,7 +8,8 @@ from app.llm import get_client, log_usage
 from app.mcp_client import MCPManager
 from app.nodes import critique_agent, read_agent, search_agent, unclear_finding
 
-logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
+logging.basicConfig(level=logging.WARNING, format="%(name)s: %(message)s")
+logging.getLogger("factchecker.llm").setLevel(logging.INFO)
 
 
 async def main(claim: str) -> int:
@@ -21,26 +22,22 @@ async def main(claim: str) -> int:
         source = sources[0]
         print(f"\nSource: {source['title']} - {source['url']}")
 
-        try:
-            page_text = await mcp.fetch_page(source["url"])
-        except Exception as e:
-            print(f"Fetch failed: {e}")
-            page_text = ""
-        if not page_text:
+        read = await read_agent(mcp, client, claim, source)
+        print(f"Credibility: {read['credibility']} ({read['credibility_reason']})")
+        print(f"Passages kept: {len(read['passages'])} (~{sum(len(p) for p in read['passages']) // 4} tokens)")
+        print(f"Read agent summary: {read['summary'] or '(no summary)'}")
+
+        finding = await critique_agent(
+            client,
+            claim,
+            read["passages"],
+            url=read["url"],
+            title=read["title"],
+            credibility=read["credibility"],
+            credibility_reason=read["credibility_reason"],
+        )
+        if not read["passages"]:
             finding = unclear_finding(source["url"], source["title"], "fetch failed or page empty")
-            print("\nFinding:")
-            print(json.dumps(finding, indent=2))
-            log_usage()
-            return 0
-
-        summary = await read_agent(client, claim, page_text)
-        print(f"\nRead agent summary: {summary or '(no summary)'}")
-
-        finding = await critique_agent(client, claim, page_text)
-        if finding is None:
-            finding = unclear_finding(source["url"], source["title"], "LLM unavailable or rate limited")
-        finding["url"] = source["url"]
-        finding["title"] = source["title"]
 
         print("\nFinding:")
         print(json.dumps(finding, indent=2))

@@ -13,6 +13,7 @@ from mcp.client.stdio import stdio_client
 SEARCH_TOOL = "search"
 FETCH_TOOL = "fetch"
 SEARCH_SERVER = Path(__file__).resolve().parent.parent / "mcp_servers" / "search_server.py"
+EVIDENCE_SERVER = Path(__file__).resolve().parent.parent / "mcp_servers" / "evidence_server.py"
 
 
 class MCPManager:
@@ -20,6 +21,7 @@ class MCPManager:
         self._stack = AsyncExitStack()
         self.search: ClientSession | None = None
         self.fetch: ClientSession | None = None
+        self.evidence: ClientSession | None = None
 
     async def __aenter__(self):
         uvx = shutil.which("uvx.exe") or shutil.which("uvx")
@@ -27,6 +29,7 @@ class MCPManager:
             raise RuntimeError("uvx not found; the fetch MCP server needs uv")
         self.search = await self._start(sys.executable, [str(SEARCH_SERVER)])
         self.fetch = await self._start(uvx, ["mcp-server-fetch"])
+        self.evidence = await self._start(sys.executable, [str(EVIDENCE_SERVER)])
         return self
 
     async def _start(self, command: str, args: list[str]) -> ClientSession:
@@ -51,6 +54,50 @@ class MCPManager:
         if not res.content:
             return ""
         return res.content[0].text
+
+    async def extract_passages(self, text: str, claim: str, max_passages: int = 4) -> list[str]:
+        import json
+
+        res = await self.evidence.call_tool("extract_passages", {"text": text, "claim": claim, "max_passages": max_passages})
+        st = _structured(res)
+        if isinstance(st, list):
+            return [str(x) for x in st]
+        raw = res.content[0].text if res.content else ""
+        if not raw or raw.startswith("Error"):
+            return []
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, list) else [raw]
+        except json.JSONDecodeError:
+            return [raw]
+
+    async def source_credibility(self, url: str) -> dict:
+        import json
+
+        res = await self.evidence.call_tool("source_credibility", {"url": url})
+        st = _structured(res)
+        if isinstance(st, dict):
+            return st
+        raw = res.content[0].text if res.content else ""
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return {"score": 0.0, "reason": f"unparseable evidence response: {raw[:80]}"}
+
+    async def extract_date(self, text: str) -> str | None:
+        res = await self.evidence.call_tool("extract_date", {"text": text})
+        st = _structured(res)
+        if st is not None:
+            return None if st in ("null", "") else str(st)
+        raw = res.content[0].text if res.content else ""
+        return None if raw in ("null", "") else raw
+
+
+def _structured(res) -> object:
+    sc = getattr(res, "structuredContent", None)
+    if isinstance(sc, dict) and "result" in sc:
+        return sc["result"]
+    return None
 
 
 def _parse_search_text(text: str) -> list[dict]:
