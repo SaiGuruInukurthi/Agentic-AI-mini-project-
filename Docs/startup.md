@@ -5,7 +5,7 @@ Cold-start sequence for this machine (Windows + PowerShell + conda `mini`). Ever
 ## 1. Prerequisites
 
 - conda env **`mini`** (Python 3.12) — checked in, not created
-- `GROQ_API` in `.env` (never committed). `GROQ_MODEL` defaults to `openai/gpt-oss-20b`
+- `GROQ_API` in `.env` (never committed). Model routing defaults in `app/llm.py`: `GROQ_MODEL` = `openai/gpt-oss-20b` (read/critique), `GROQ_MODEL_BIG` = `openai/gpt-oss-120b` (extract/rewrite/summarize), `GROQ_MODEL_FALLBACK` = `qwen/qwen3.8-27b`. Free-tier token caps are per model (separate 200K/day buckets)
 - `uv` (for the fetch MCP server) and Node.js are optional but recommended
 
 ## 2. Activate the environment

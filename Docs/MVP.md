@@ -32,7 +32,7 @@ The app (backend + web page) runs **locally on a laptop**. LLM calls go to the *
 | Constraint | Detail |
 |---|---|
 | Runtime | App runs locally, demo only, no deployment |
-| LLM | Groq API, free tier, model `llama-3.1-8b-instant` (cheapest, highest free limits). Key in env var `GROQ_API` |
+| LLM | Groq API, free tier, model `openai/gpt-oss-20b` (the spec's original `llama-3.1-8b-instant` was retired by Groq on 2026-08-16; see Appendix A). Key in env var `GROQ_API` |
 | Orchestration | LangGraph (Python) |
 | Tools | MCP servers: search, fetch, plus a **custom evidence MCP server** |
 | UI | Single HTML page served by the backend (no separate frontend project) |
@@ -44,12 +44,12 @@ The app (backend + web page) runs **locally on a laptop**. LLM calls go to the *
 | Item | Setting |
 |---|---|
 | API key | Environment variable **`GROQ_API`**. Load from `.env` with `python-dotenv`. Commit a `.env.example` containing `GROQ_API=` and add `.env` to `.gitignore`. Never hardcode or log the key |
-| Model | `GROQ_MODEL` env var, default **`llama-3.1-8b-instant`**. Chosen as Groq's cheapest model with the highest free-tier ceilings (about 14,400 requests/day and 500K tokens/day on the free plan as of Aug 2026). Confirm the model ID exists on Groq's models page and read the real limits at `console.groq.com/settings/limits` before the demo |
+| Model | `GROQ_MODEL` env var, default **`openai/gpt-oss-20b`** (updated 19-10-2026; `llama-3.1-8b-instant` was retired 2026-08-16 and 404s — verified). gpt-oss models are reasoning models: `reasoning_effort` is required in practice. Free-tier limits are **per model** (separate buckets): gpt-oss-20b / gpt-oss-120b / qwen3.8-27b each get 30 RPM, 1K req/day, 8K TPM, 200K tokens/day. Read the real limits at `console.groq.com/settings/limits` before the demo |
 | Client | Groq Python SDK, or the OpenAI-compatible endpoint `https://api.groq.com/openai/v1` with `api_key=os.environ["GROQ_API"]`. **All LLM access lives in `app/llm.py` only**, so the model can be swapped by changing `GROQ_MODEL` |
 | Settings | `temperature=0`, JSON mode for structured outputs, validate with Pydantic, one retry on invalid JSON |
 | Output caps | `max_tokens`: 300 for claim extractor / read / critique, 400 for summarizer |
 
-**Token budget (the real constraint is tokens, not requests).** A run is about 13 LLM calls (1 claim extraction, 1 query, 5 read, 5 critique, 1 summary). Keep each call near 2,500 tokens, so a run is about 30K tokens and the free daily token cap allows roughly 15 runs per day. Do not exceed 5 sources or 3 claims.
+**Token budget (the real constraint is tokens, not requests).** A run is about 13 LLM calls (1 claim extraction, 1 query, 5 read, 5 critique, 1 summary), measured at roughly 10–12K tokens per run. The free daily token cap is **200K per model per day** (separate buckets per model), so one bucket allows roughly 15–18 simple runs/day; with model routing (Appendix A) the heavy nodes run on their own bucket, roughly doubling total capacity. Do not exceed 5 sources or 3 claims.
 
 **Rate-limit handling (in `llm.py`):**
 - Semaphore of 2 concurrent calls
@@ -371,3 +371,19 @@ All prompts must request JSON where structured, and keep inputs short for the sm
 - `README.md` has setup (install, set `GROQ_API`, run) in under 10 lines
 - Runs locally with only Groq, search and fetch calls going out; `GROQ_API` is read from env and never committed
 - Demo test claims in Section 16 behave as expected
+
+---
+
+## Appendix A. Deviations from spec (recorded during the M1–M6 build, 19-10-2026)
+
+All deviations were forced by the environment and verified before adoption; details in `Docs/reports/` and `AGENTS.md`.
+
+| # | Spec said | As built | Why |
+|---|---|---|---|
+| 1 | Model `llama-3.1-8b-instant` | `openai/gpt-oss-20b` | Llama 3.x retired for self-serve on 2026-08-16; `llama-3.1-8b-instant` 404s (verified). Groq's official replacement mapping points to gpt-oss-20b |
+| 2 | Search MCP: any keyless server | Own FastMCP server (`mcp_servers/search_server.py`) wrapping `ddgs` | The npm `duckduckgo-mcp-server` triggers DuckDuckGo anomaly detection from this network; `ddgs` works and retries across backends |
+| 3 | MCP via `langchain-mcp-adapters` or official SDK | Official `mcp` SDK, pinned `>=1.17,<2` | mcp 2.x renamed FastMCP → `MCPServer` with breaking changes; the adapters package is unnecessary |
+| 4 | `max_tokens`: 300/400 | 600 with `reasoning_effort="low"` | gpt-oss are reasoning models: reasoning tokens ate the 300 budget and caused `json_validate_failed` 400s with empty generations |
+| 5 | State schema fixed | `search_query` added to `State` | The retry loop needs to hand the rewritten query from `prep_retry` back to `search_agent` |
+| 6 | Credibility: unknown domains 0.5 | Unknown non-HTTPS domains 0.4 | Spec is silent on plain-HTTP unknowns; scored slightly below HTTPS unknowns |
+| 7 | Single model for all calls | Model routing: `gpt-oss-120b` for summarizer / query rewrite / claim extraction, `gpt-oss-20b` for read + critique, `qwen/qwen3.8-27b` as fallback | Free-tier limits are per model (separate 200K TPD buckets), so routing roughly doubles daily capacity and puts the stronger model where reasoning matters (added 19-10-2026) |

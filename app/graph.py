@@ -80,6 +80,7 @@ def make_summarize_node(client: AsyncGroq):
             }],
             Explanation,
             max_tokens=600,
+            role="big",
         )
         if result is None:
             explanation = "Summary unavailable (LLM error or rate limited). Verdict computed from source findings."

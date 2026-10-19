@@ -46,6 +46,7 @@ async def extract_claims_llm(client: AsyncGroq, text: str) -> tuple[list[str], s
         [{"role": "user", "content": EXTRACT_PROMPT.format(text=text)}],
         ExtractedClaims,
         max_tokens=600,
+        role="big",
     )
     if result is None:
         return [text], ""
@@ -58,6 +59,7 @@ async def rewrite_query(client: AsyncGroq, query: str) -> str:
         [{"role": "user", "content": QUERY_REWRITE_PROMPT.format(query=query)}],
         QueryRewrite,
         max_tokens=600,
+        role="big",
     )
     return result.query if result else query
 
@@ -124,6 +126,7 @@ async def read_agent(mcp: MCPManager, client: AsyncGroq, claim: str, source: Sou
         [{"role": "user", "content": READ_PROMPT.format(claim=claim, passages=passages_text)}],
         ReadSummary,
         max_tokens=600,
+        role="small",
     )
     return {
         "url": url,
@@ -164,6 +167,7 @@ async def critique_agent(
         [{"role": "user", "content": CRITIQUE_PROMPT.format(claim=claim, passages=passages_text)}],
         Critique,
         max_tokens=600,
+        role="small",
     )
     if result is None:
         base["critique_note"] = "LLM unavailable or rate limited"

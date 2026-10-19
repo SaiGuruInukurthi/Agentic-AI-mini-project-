@@ -8,7 +8,7 @@ All diagrams are Mermaid and reflect the code as built (M1–M6). The LangGraph 
 flowchart LR
     U["User<br/>(browser)"] -->|"paste claim / watch progress"| APP["Fact-Checker web app<br/>(localhost:8000)"]
     APP -->|"verdict + cited sources"| U
-    APP -->|"LLM calls (~13/run)"| GROQ["Groq API<br/>openai/gpt-oss-20b"]
+    APP -->|"LLM calls (~13/run, routed)"| GROQ["Groq API<br/>gpt-oss-20b + gpt-oss-120b"]
     APP -->|"search / fetch pages"| WEB["The internet<br/>(DuckDuckGo backends, websites)"]
 ```
 
@@ -181,10 +181,12 @@ flowchart LR
     EP --> CD["evidence: extract_date"]
     FE --> CR["evidence: source_credibility(url)<br/>0.3–0.9 rule tiers"]
     CR --> ADJ["adjustments:<br/>+0.05 if <2y old · cap 0.3 if claim terms absent"]
-    RD -->|summary| CRQ["Critique agent (LLM)"]
+    RD -->|"summary (never shown to critique)"| FND["Finding assembly<br/>(read summary + critique output)"]
+    EP -->|"claim + passages ONLY<br/>(independence rule)"| CRQ["Critique agent (LLM)"]
     CRQ -->|stance·conf·quote| QC["quote_in_passages check<br/>(normalized substring / fuzzy ≥0.9)"]
-    QC -->|finding| VF["verdict.py:<br/>score = Σ(±cred·conf)/Σ(cred·conf)"]
-    VF -->|True ≥0.4 · False ≤−0.4 · else Mixed · <2 clear Unverifiable| SUMX["Summarizer (LLM)"]
+    QC --> FND
+    FND -->|finding| VF["verdict.py:<br/>score = Σ(±cred·conf)/Σ(cred·conf)"]
+    VF -->|"True ≥ 0.4 · False ≤ −0.4 · else Mixed · under 2 clear → Unverifiable"| SUMX["Summarizer (LLM)"]
     SUMX -->|explanation| OUT["Result + citations"]
 ```
 
@@ -203,7 +205,7 @@ classDiagram
         +float credibility
         +str credibility_reason
         +list~str~ passages
-        +str stance (supports/contradicts/unclear)
+        +str stance supports/contradicts/unclear
         +float confidence
         +str quote
         +str critique_note
@@ -212,9 +214,9 @@ classDiagram
         +str claim
         +str search_query
         +list~Source~ sources
-        +list~Finding~ findings (operator.add)
+        +list~Finding~ findings operator.add reducer
         +int retries
-        +str verdict (True/False/Mixed/Unverifiable)
+        +str verdict True/False/Mixed/Unverifiable
         +float score
         +str explanation
     }

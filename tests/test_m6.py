@@ -53,7 +53,7 @@ class CountingFakeMCP(RetryFakeMCP):
 
 
 def make_chat(noisy=False):
-    async def fake_chat_json(client, messages, schema, max_tokens=600):
+    async def fake_chat_json(client, messages, schema, max_tokens=600, role="small"):
         from app.graph import Explanation
 
         if schema is ReadSummary:
@@ -88,7 +88,7 @@ def test_vague_claim_triggers_exactly_one_retry(monkeypatch):
 def test_strong_evidence_does_not_retry(monkeypatch):
     fake = CountingFakeMCP(weak_first=False)
 
-    async def strong_chat(client, messages, schema, max_tokens=600):
+    async def strong_chat(client, messages, schema, max_tokens=600, role="small"):
         from app.graph import Explanation
         from app.nodes import QueryRewrite, ReadSummary
 

@@ -1,4 +1,4 @@
-"""All LLM access lives here: Groq client, JSON validation, rate limits, usage tracking."""
+"""All LLM access lives here: Groq client, model routing, JSON validation, rate limits, usage tracking."""
 import asyncio
 import json
 import logging
@@ -12,14 +12,25 @@ load_dotenv()
 
 log = logging.getLogger("factchecker.llm")
 
+# Model routing. Groq free-tier limits are PER MODEL (separate ~200K TPD buckets),
+# so high-volume per-source calls run on the small model while reasoning-heavy
+# calls run on the big one: two buckets instead of one, and stronger judgment
+# where it matters. The fallback covers retired/blocked models and exhausted buckets.
 MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+MODEL_BIG = os.getenv("GROQ_MODEL_BIG", "openai/gpt-oss-120b")
+MODEL_FALLBACK = os.getenv("GROQ_MODEL_FALLBACK", "qwen/qwen3.8-27b")
+
+MODEL_ROLES = {"small": MODEL, "big": MODEL_BIG}
+EFFORT_BY_ROLE = {"big": "medium", "small": "low"}
+DEFAULT_ROLE = "small"
+
 MAX_CONCURRENCY = 2
 RETRY_AFTER_MAX_TRIES = 3
 JSON_RETRIES = 1
 RATE_LIMIT_WAIT_THRESHOLD = 5000
 
 _sem = asyncio.Semaphore(MAX_CONCURRENCY)
-_usage = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0}
+_usage: dict[str, dict[str, int]] = {}
 
 
 def get_client() -> AsyncGroq:
@@ -32,20 +43,21 @@ def get_client() -> AsyncGroq:
 
 
 def log_usage() -> None:
-    log.info(
-        "LLM usage so far: %d requests, %d prompt tokens, %d completion tokens",
-        _usage["requests"],
-        _usage["prompt_tokens"],
-        _usage["completion_tokens"],
-    )
+    for model, u in _usage.items():
+        log.info(
+            "LLM usage so far [%s]: %d requests, %d prompt tokens, %d completion tokens",
+            model,
+            u["requests"],
+            u["prompt_tokens"],
+            u["completion_tokens"],
+        )
 
 
-def _accumulate(usage) -> None:
-    if usage is None:
-        return
-    _usage["requests"] += 1
-    _usage["prompt_tokens"] += getattr(usage, "prompt_tokens", 0) or 0
-    _usage["completion_tokens"] += getattr(usage, "completion_tokens", 0) or 0
+def _accumulate(model: str, usage) -> None:
+    u = _usage.setdefault(model, {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0})
+    u["requests"] += 1
+    u["prompt_tokens"] += getattr(usage, "prompt_tokens", 0) or 0
+    u["completion_tokens"] += getattr(usage, "completion_tokens", 0) or 0
 
 
 def _extract(content: str, schema: type[BaseModel]) -> BaseModel | None:
@@ -57,22 +69,25 @@ def _extract(content: str, schema: type[BaseModel]) -> BaseModel | None:
         return None
 
 
-async def chat_json(
+async def _chat_attempt(
     client: AsyncGroq,
+    model: str,
+    effort: str,
     messages: list[dict],
     schema: type[BaseModel],
-    max_tokens: int = 600,
-) -> BaseModel | None:
+    max_tokens: int,
+) -> tuple[str, BaseModel | None]:
+    """Run against one candidate model. Status: ok (parsed, maybe None) | rate_limited | error."""
     backoff = 2.0
     for attempt in range(RETRY_AFTER_MAX_TRIES):
         try:
             async with _sem:
                 raw = await client.chat.completions.with_raw_response.create(
-                    model=MODEL,
+                    model=model,
                     messages=messages,
                     temperature=0,
                     max_tokens=max_tokens,
-                    reasoning_effort="low",
+                    reasoning_effort=effort,
                     response_format={"type": "json_object"},
                 )
             remaining = raw.headers.get("x-ratelimit-remaining-tokens")
@@ -80,10 +95,10 @@ async def chat_json(
                 log.info("Rate limit budget low (%s tokens left), pausing", remaining)
                 await asyncio.sleep(2)
             completion = await raw.parse()
-            _accumulate(completion.usage)
+            _accumulate(model, completion.usage)
             parsed = _extract(completion.choices[0].message.content or "", schema)
             if parsed is not None:
-                return parsed
+                return "ok", parsed
             if len(messages) and attempt < JSON_RETRIES:
                 log.info("Retrying with stricter JSON reminder")
                 messages = messages + [
@@ -93,17 +108,57 @@ async def chat_json(
                     }
                 ]
                 continue
-            return None
+            return "ok", None
         except RateLimitError as e:
             retry_after = None
             if e.response is not None:
                 retry_after = e.response.headers.get("retry-after")
             wait = float(retry_after) if retry_after and retry_after.replace(".", "", 1).isdigit() else backoff
-            log.warning("HTTP 429, waiting %.1fs (attempt %d/%d)", wait, attempt + 1, RETRY_AFTER_MAX_TRIES)
+            log.warning(
+                "HTTP 429 on %s, waiting %.1fs (attempt %d/%d)",
+                model,
+                wait,
+                attempt + 1,
+                RETRY_AFTER_MAX_TRIES,
+            )
             await asyncio.sleep(wait)
             backoff *= 2
         except Exception as e:
-            log.error("LLM call failed: %s: %s", type(e).__name__, e)
-            return None
-    log.error("LLM still rate limited after %d tries; caller should fall back to unclear", RETRY_AFTER_MAX_TRIES)
+            log.error("LLM call failed on %s: %s: %s", model, type(e).__name__, e)
+            return "error", None
+    return "rate_limited", None
+
+
+async def chat_json(
+    client: AsyncGroq,
+    messages: list[dict],
+    schema: type[BaseModel],
+    max_tokens: int = 600,
+    role: str = DEFAULT_ROLE,
+) -> BaseModel | None:
+    """Structured LLM call with role-based model routing and a fallback model.
+
+    Roles: "small" (high-volume per-source work), "big" (reasoning/judgment work).
+    Falls back to MODEL_FALLBACK when the primary errors or its bucket is exhausted;
+    invalid JSON is NOT a fallback trigger (callers map None to an unclear finding).
+    """
+    effort = EFFORT_BY_ROLE.get(role, "low")
+    primary = MODEL_ROLES.get(role, MODEL)
+    candidates = [primary] + ([MODEL_FALLBACK] if MODEL_FALLBACK != primary else [])
+    for i, model in enumerate(candidates):
+        status, parsed = await _chat_attempt(client, model, effort, messages, schema, max_tokens)
+        if status == "ok":
+            if i > 0:
+                log.info("Request for %s served by fallback model %s", schema.__name__, model)
+            return parsed
+        if i + 1 < len(candidates):
+            log.warning(
+                "%s unavailable on %s (%s); falling back to %s",
+                schema.__name__,
+                model,
+                status,
+                candidates[i + 1],
+            )
+            continue
+    log.error("All models failed or rate limited; caller should fall back to unclear")
     return None

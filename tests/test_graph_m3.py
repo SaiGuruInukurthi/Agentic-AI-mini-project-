@@ -37,7 +37,7 @@ class FakeMCP:
         return None
 
 
-async def fake_chat_json(client, messages, schema, max_tokens=600):
+async def fake_chat_json(client, messages, schema, max_tokens=600, role="small"):
     from app.graph import Explanation
     from app.nodes import QueryRewrite, ReadSummary
 
