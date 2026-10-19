@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fact-Checker</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1c2330; --muted:#66707f; --line:#e3e6eb; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--ink); }
+  main { max-width:760px; margin:0 auto; }
+  h1 { font-size:1.4rem; margin:0 0 12px; }
+  textarea { width:100%; min-height:90px; padding:12px; font:inherit; border:1px solid var(--line); border-radius:8px; resize:vertical; }
+  button { margin-top:10px; padding:10px 22px; font:inherit; font-weight:600; color:#fff; background:#2b5fd9; border:0; border-radius:8px; cursor:pointer; }
+  button:disabled { background:#9db2e3; cursor:default; }
+  #progress { margin-top:16px; font-size:.9rem; color:var(--muted); }
+  #progress div { padding:2px 0; }
+  #progress div::before { content:"\2022 "; color:#2b5fd9; }
+  .card { margin-top:20px; padding:16px 20px; background:var(--card); border:1px solid var(--line); border-radius:10px; }
+  .badge { display:inline-block; padding:4px 14px; border-radius:999px; color:#fff; font-weight:700; letter-spacing:.3px; }
+  .badge.True { background:#1e9e4a; } .badge.False { background:#d64545; }
+  .badge.Mixed { background:#d69a2b; } .badge.Unverifiable { background:#8a919c; }
+  .score { margin-left:10px; color:var(--muted); font-size:.9rem; }
+  #explanation { margin:10px 0 0; line-height:1.5; }
+  table { width:100%; border-collapse:collapse; margin-top:14px; font-size:.88rem; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .bar { position:relative; width:90px; height:8px; background:#eceef2; border-radius:4px; display:inline-block; }
+  .bar i { position:absolute; inset:0 auto 0 0; background:#2b5fd9; border-radius:4px; }
+  .stance-supports { color:#1e9e4a; font-weight:600; } .stance-contradicts { color:#d64545; font-weight:600; }
+  .stance-unclear { color:#8a919c; font-weight:600; }
+  blockquote { margin:4px 0 0; padding-left:10px; border-left:3px solid var(--line); color:var(--muted); font-style:italic; }
+  .hidden { display:none; }
+  .error { color:#d64545; font-weight:600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Fact-Checker</h1>
+  <textarea id="claim" placeholder="Paste a claim or short article to fact-check..."></textarea>
+  <button id="checkBtn">Check</button>
+
+  <div id="progress"></div>
+
+  <div id="resultCard" class="card hidden">
+    <span id="verdictBadge" class="badge"></span><span id="score" class="score"></span>
+    <p id="explanation"></p>
+  </div>
+
+  <div id="sourceCard" class="card hidden">
+    <table>
+      <thead><tr><th>#</th><th>Source</th><th>Credibility</th><th>Stance</th><th>Quote</th></tr></thead>
+      <tbody id="sourceRows"></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let findings = [];
+
+function addProgress(detail) {
+  const d = document.createElement("div");
+  d.textContent = detail;
+  $("progress").appendChild(d);
+}
+
+function esc(s) { const d = document.createElement("div"); d.textContent = s ?? ""; return d.innerHTML; }
+
+function addFinding(f) {
+  findings.push(f);
+  const row = document.createElement("tr");
+  row.innerHTML = `<td>${findings.length}</td>` +
+    `<td><a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.title || f.url)}</a></td>` +
+    `<td><span class="bar"><i style="width:${Math.round((f.credibility ?? 0) * 100)}%"></i></span> ${f.credibility ?? 0}</td>` +
+    `<td><span class="stance-${esc(f.stance)}">${esc(f.stance)}</span></td>` +
+    `<td>${f.quote ? `<blockquote>${esc(f.quote)}</blockquote>` : esc(f.critique_note || "")}</td>`;
+  $("sourceRows").appendChild(row);
+  $("sourceCard").classList.remove("hidden");
+}
+
+function showResult(r) {
+  const b = $("verdictBadge");
+  b.textContent = r.verdict;
+  b.className = "badge " + esc(r.verdict);
+  $("score").textContent = `score ${r.score}`;
+  $("explanation").textContent = r.explanation;
+  $("resultCard").classList.remove("hidden");
+}
+
+async function run() {
+  const text = $("claim").value.trim();
+  if (!text) { alert("Paste a claim first."); return; }
+  $("checkBtn").disabled = true;
+  $("progress").innerHTML = "";
+  $("sourceRows").innerHTML = "";
+  findings = [];
+  $("resultCard").classList.add("hidden");
+  $("sourceCard").classList.add("hidden");
+
+  try {
+    const res = await fetch("/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text })
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split("\n\n");
+      buf = parts.pop();
+      for (const part of parts) {
+        const line = part.split("\n").find(l => l.startsWith("data: "));
+        if (!line) continue;
+        const ev = JSON.parse(line.slice(6));
+        if (ev.type === "progress") {
+          addProgress(ev.detail);
+        } else if (ev.type === "finding") {
+          addProgress("Done: " + (ev.finding.title || ev.finding.url));
+          addFinding(ev.finding);
+        } else if (ev.type === "result") {
+          showResult(ev);
+        } else if (ev.type === "error") {
+          addProgress("ERROR: " + ev.message);
+          $("progress").lastChild.classList.add("error");
+        }
+      }
+    }
+  } catch (e) {
+    addProgress("ERROR: " + e.message);
+  } finally {
+    $("checkBtn").disabled = false;
+  }
+}
+
+$("checkBtn").addEventListener("click", run);
+</script>
+</body>
+</html>
