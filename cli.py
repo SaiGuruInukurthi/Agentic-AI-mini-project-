@@ -4,6 +4,7 @@ import json
 import logging
 import sys
 
+from app import trace
 from app.graph import build_graph
 from app.llm import get_client, log_usage
 from app.mcp_client import MCPManager
@@ -17,9 +18,19 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
 
 async def main(claim: str) -> int:
     client = get_client()
+    trace.start_run("cli")
+    trace.event("user_input", text=claim)
     async with MCPManager() as mcp:
         graph = build_graph(mcp, client)
         final = await graph.ainvoke({"claim": claim, "retries": 0})
+        trace.event(
+            "run_final",
+            verdict=final.get("verdict", "Unverifiable"),
+            score=final.get("score", 0.0),
+            explanation=final.get("explanation", ""),
+            retries=final.get("retries", 0),
+            findings=[{k: v for k, v in f.items() if k != "passages"} for f in final.get("findings", [])],
+        )
 
         print(f"\nVerdict: {final.get('verdict', 'Unverifiable')} (score {final.get('score', 0.0)})")
         print(f"\n{final.get('explanation', '')}\n")

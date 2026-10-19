@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 from groq import AsyncGroq, RateLimitError
 from pydantic import BaseModel, ValidationError
 
+from . import trace
+
 load_dotenv()
 
 log = logging.getLogger("factchecker.llm")
@@ -81,6 +83,7 @@ async def _chat_attempt(
     backoff = 2.0
     for attempt in range(RETRY_AFTER_MAX_TRIES):
         try:
+            trace.event("llm_attempt", schema=schema.__name__, model=model, attempt=attempt, messages=messages)
             async with _sem:
                 raw = await client.chat.completions.with_raw_response.create(
                     model=model,
@@ -96,7 +99,19 @@ async def _chat_attempt(
                 await asyncio.sleep(2)
             completion = await raw.parse()
             _accumulate(model, completion.usage)
-            parsed = _extract(completion.choices[0].message.content or "", schema)
+            content = completion.choices[0].message.content or ""
+            parsed = _extract(content, schema)
+            trace.event(
+                "llm_response",
+                schema=schema.__name__,
+                model=model,
+                content=content,
+                parsed=parsed.model_dump() if parsed else None,
+                usage={
+                    "prompt_tokens": getattr(completion.usage, "prompt_tokens", 0) or 0,
+                    "completion_tokens": getattr(completion.usage, "completion_tokens", 0) or 0,
+                },
+            )
             if parsed is not None:
                 return "ok", parsed
             if len(messages) and attempt < JSON_RETRIES:
@@ -147,6 +162,7 @@ async def chat_json(
     candidates = [primary] + ([MODEL_FALLBACK] if MODEL_FALLBACK != primary else [])
     for i, model in enumerate(candidates):
         status, parsed = await _chat_attempt(client, model, effort, messages, schema, max_tokens)
+        trace.event("llm_done", schema=schema.__name__, model=model, status=status, fallback=i > 0)
         if status == "ok":
             if i > 0:
                 log.info("Request for %s served by fallback model %s", schema.__name__, model)

@@ -47,7 +47,12 @@ The Groq free tier is limited and cannot be refilled. Treat every live call as e
 - **Never read the contents of `.env`** (not even with the Read tool). Code loads it via `python-dotenv` at runtime only.
 - Log token usage after each live run so the budget is visible.
 
-## 4. Workflow
+## 4. Run traces (logs/)
+
+- Every API request or CLI run writes `logs/<timestamp>_<label>.jsonl` (gitignored, never committed): user input, every MCP search/fetch/evidence call, every LLM prompt + raw response + per-call usage, per-source findings, verdicts, errors.
+- **Read these files after live runs to assess model quality** (does critique quote real passages? are read summaries on-topic?). `app/trace.py` is a no-op until `start_run()` is called, so tests stay silent.
+
+## 5. Workflow
 
 - Build in the order of the milestones in `Docs/MVP.md` Section 12 (M1 to M6). Do not start the next milestone until the current acceptance check passes.
 - **Full-project build authorized (19-10-2026):** the user has OK'd building M1 to M6 in one session. Work milestone by milestone; after each one, write a timestamped report to `Docs/reports/` named `DD-MM-YYYY HH-MM_<M#>_<type>.md` (e.g. `19-10-2026 13-00_M1_report.md`), give the user a brief summary, then continue.
@@ -60,7 +65,7 @@ The Groq free tier is limited and cannot be refilled. Treat every live call as e
 - File paths referenced here (`app/llm.py`, `verdict.py`, `tests/`, `cli.py`) follow the target layout in `Docs/MVP.md` Section 14. Until a milestone creates them, they do not exist yet.
 - Commit after each milestone with a clear message. Never commit `.env`.
 
-## 5. Quick reference
+## 6. Quick reference
 
 | Task | Command |
 |---|---|
@@ -71,3 +76,5 @@ The Groq free tier is limited and cannot be refilled. Treat every live call as e
 | Install a package | `& "C:\Users\IC1807\anaconda3\envs\mini\python.exe" -m pip install <package>` |
 | Run backend (M5+) | `& "C:\Users\IC1807\anaconda3\envs\mini\python.exe" -m uvicorn app.main:app --reload` |
 | MCP smoke test (no API) | `& "C:\Users\IC1807\anaconda3\envs\mini\python.exe" samples\smoke_mcp.py` |
+
+Skills provide specialized instructions and workflows for specific tasks.

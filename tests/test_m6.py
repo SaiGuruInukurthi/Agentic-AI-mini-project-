@@ -123,10 +123,19 @@ def test_extractor_caps_at_three(monkeypatch):
     assert notice == "kept first 3 of 5"
 
 
+class SilentTrace:
+    def start_run(self, label="run"):
+        pass
+
+    def event(self, kind, **data):
+        pass
+
+
 def test_multi_claim_sse(monkeypatch):
     monkeypatch.setattr("app.nodes.chat_json", make_chat(noisy=True))
     monkeypatch.setattr("app.graph.chat_json", make_chat(noisy=True))
     monkeypatch.setattr("app.main.MCPManager", lambda: RetryFakeMCP())
+    monkeypatch.setattr("app.main.trace", SilentTrace())
 
     from app import main as api
 

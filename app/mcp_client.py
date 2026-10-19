@@ -10,6 +10,8 @@ from urllib.parse import urlparse
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from . import trace
+
 SEARCH_TOOL = "search"
 FETCH_TOOL = "fetch"
 SEARCH_SERVER = Path(__file__).resolve().parent.parent / "mcp_servers" / "search_server.py"
@@ -45,20 +47,26 @@ class MCPManager:
         return False
 
     async def search_web(self, query: str, max_results: int = 8) -> list[dict]:
+        trace.event("mcp_search", query=query, max_results=max_results)
         res = await self.search.call_tool(SEARCH_TOOL, {"query": query, "max_results": max_results})
         text = res.content[0].text if res.content else ""
-        return _parse_search_text(text)
+        results = _parse_search_text(text)
+        trace.event("mcp_search_result", query=query, n=len(results), results=results, raw=text)
+        return results
 
     async def fetch_page(self, url: str) -> str:
+        trace.event("mcp_fetch", url=url)
         res = await self.fetch.call_tool(FETCH_TOOL, {"url": url, "max_length": 10000})
-        if not res.content:
-            return ""
-        return res.content[0].text
+        text = res.content[0].text if res.content else ""
+        trace.event("mcp_fetch_result", url=url, chars=len(text), text=text)
+        return text
 
     async def extract_passages(self, text: str, claim: str, max_passages: int = 4) -> list[str]:
         import json
 
         res = await self.evidence.call_tool("extract_passages", {"text": text, "claim": claim, "max_passages": max_passages})
+        trace.event("mcp_evidence", tool="extract_passages", claim=claim,
+                    result=_structured(res), raw=(res.content[0].text if res.content else "")[:4000])
         st = _structured(res)
         if isinstance(st, list):
             return [str(x) for x in st]
@@ -75,6 +83,8 @@ class MCPManager:
         import json
 
         res = await self.evidence.call_tool("source_credibility", {"url": url})
+        trace.event("mcp_evidence", tool="source_credibility", url=url,
+                    result=_structured(res), raw=(res.content[0].text if res.content else "")[:2000])
         st = _structured(res)
         if isinstance(st, dict):
             return st
@@ -86,6 +96,8 @@ class MCPManager:
 
     async def extract_date(self, text: str) -> str | None:
         res = await self.evidence.call_tool("extract_date", {"text": text})
+        trace.event("mcp_evidence", tool="extract_date", result=_structured(res),
+                    raw=(res.content[0].text if res.content else "")[:200])
         st = _structured(res)
         if st is not None:
             return None if st in ("null", "") else str(st)

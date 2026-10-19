@@ -47,10 +47,19 @@ async def fake_chat_json(client, messages, schema, max_tokens=600, role="small")
     return Critique(stance="supports", confidence=0.7, quote="reliable evidence text here", note="n")
 
 
+class SilentTrace:
+    def start_run(self, label="run"):
+        pass
+
+    def event(self, kind, **data):
+        pass
+
+
 def test_check_sse_stream(monkeypatch):
     monkeypatch.setattr("app.nodes.chat_json", fake_chat_json)
     monkeypatch.setattr("app.graph.chat_json", fake_chat_json)
     monkeypatch.setattr("app.main.MCPManager", lambda: FakeMCP())
+    monkeypatch.setattr("app.main.trace", SilentTrace())
 
     from app import main as api
 

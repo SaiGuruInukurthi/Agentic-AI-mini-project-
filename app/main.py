@@ -12,6 +12,7 @@ from .graph import build_graph
 from .llm import get_client, log_usage
 from .mcp_client import MCPManager
 from .nodes import extract_claims_llm
+from . import trace
 
 logging.basicConfig(level=logging.WARNING)
 log = logging.getLogger("factchecker.api")
@@ -52,6 +53,9 @@ async def check(request: Request):
 
     graph = build_graph(request.app.state.mcp, request.app.state.llm)
 
+    trace.start_run("api")
+    trace.event("user_input", text=text)
+
     async def event_stream():
         try:
             async with asyncio.timeout(RUN_BUDGET_SECONDS):
@@ -79,11 +83,15 @@ async def check(request: Request):
                                             "detail": f"{label}: {n} candidate sources"})
                             elif node == "branch":
                                 finding = update["findings"][-1]
+                                trace.event("finding", finding=finding)
                                 yield _sse({"type": "progress", "node": node,
                                             "detail": f"Checked {finding['title'] or finding['url']}"})
                                 yield _sse({"type": "finding", "finding": finding})
                             elif node == "summarize" and update:
                                 summary = update
+                    trace.event("claim_result", claim=claim, verdict=summary.get("verdict", "Unverifiable"),
+                                score=summary.get("score", 0.0), retries=retries_seen,
+                                explanation=summary.get("explanation", ""))
                     yield _sse({
                         "type": "result",
                         "claim": claim,
@@ -95,9 +103,11 @@ async def check(request: Request):
                     })
                 log_usage()
         except asyncio.TimeoutError:
+            trace.event("run_error", error="timeout: exceeded 180s budget")
             yield _sse({"type": "error", "message": "Run exceeded 3 minute budget; aborted with partial results"})
         except Exception as e:
             log.exception("Run failed")
+            trace.event("run_error", error=f"{type(e).__name__}: {e}")
             yield _sse({"type": "error", "message": f"{type(e).__name__}: {e}"})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
