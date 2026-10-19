@@ -21,9 +21,9 @@
   --sans: "Segoe UI", system-ui, -apple-system, sans-serif;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: var(--bg); color: var(--ink); font-family: var(--sans); min-height: 100vh; }
+html, body { background: var(--bg); color: var(--ink); font-family: var(--sans); min-height: 100vh; }
 
-.wrap { max-width: 860px; margin: 0 auto; padding: 32px 24px 80px; }
+.wrap { max-width: 900px; margin: 0 auto; padding: 32px 24px 80px; }
 
 /* Header */
 h1 { font-size: 1.65rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px; }
@@ -45,8 +45,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-demo { background: var(--pulse); color: var(--ink); }
 
 /* Pipeline SVG */
-.pipeline-wrap { overflow-x: auto; padding: 8px 0 4px; }
-svg { display: block; min-width: 520px; width: 100%; height: auto; }
+.pipeline-wrap { overflow-x: auto; padding: 8px 0 4px; display: block; }
+svg { display: block; min-width: 680px; width: 100%; height: auto; overflow: visible; }
 
 /* Node styles */
 .n-box { rx: 7; ry: 7; stroke-width: 1.6; transition: all 0.25s; }
@@ -136,10 +136,10 @@ svg { display: block; min-width: 520px; width: 100%; height: auto; }
 
 <svg style="position:absolute;width:0;height:0">
   <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10z" fill="var(--line)"/></marker>
-    <marker id="arrow-grey" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10z" fill="var(--muted)"/></marker>
-    <marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10z" fill="var(--amber)"/></marker>
-    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10z" fill="var(--green)"/></marker>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10z" fill="#dde1d8"/></marker>
+    <marker id="arrow-grey" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10z" fill="#6b7280"/></marker>
+    <marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10z" fill="#b07a1f"/></marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10z" fill="#1a7f4b"/></marker>
   </defs>
 </svg>
 
@@ -160,10 +160,10 @@ function svgEl(tag, attrs) {
 
 function buildPipeline(nRows) {
   nRows = Math.max(2, Math.min(nRows || 3, MAX_ROWS));
-  const svg = svgEl("svg", { viewBox: `0 0 560 ${nRows * 72 + 100}`, xmlns: "http://www.w3.org/2000/svg" });
+  const svg = svgEl("svg", { viewBox: `0 0 680 ${nRows * 72 + 100}`, xmlns: "http://www.w3.org/2000/svg" });
   const rowH = 72, topPad = 44;
-  const colX = { extract: 30, search: 130, read: 240, critique: 350, summarize: 470, verdict: 530 };
-  const boxW = 82, boxH = 34;
+  const colX = { extract: 30, search: 130, read: 250, critique: 370, summarize: 500, verdict: 590 };
+  const boxW = 88, boxH = 34;
   const cy = i => topPad + i * rowH;
 
   function mkBox(key, x, y, w, h, label, sub) {
@@ -183,7 +183,7 @@ function buildPipeline(nRows) {
   }
 
   function mkEdge(x1, y1, x2, y2, cls, marker) {
-    const line = svgEl("line", { x1, y1, x2, y2, class: cls, "marker-end": `url(#${marker || "arrow"})` });
+    const line = svgEl("line", { x1, y1, x2, y2, class: cls, fill: "none", "marker-end": `url(#${marker || "arrow"})` });
     svg.appendChild(line);
     return line;
   }
@@ -213,10 +213,12 @@ function buildPipeline(nRows) {
   }
 
   // Retry edge (dashed, summarizer back to search)
-  const ry = cy(nRows + 1) + 10;
-  const retryEdge = svgEl("polyline", {
-    points: `${colX.summarize + boxW / 2},${cy(0) + boxH} ${colX.summarize + boxW / 2},${ry} ${colX.search + boxW / 2},${ry} ${colX.search + boxW / 2},${cy(0) + boxH}`,
-    class: "e-retry", "marker-end": "url(#arrow-grey)"
+  const ry = cy(nRows + 1) + 18;
+  const retryEdge = svgEl("path", {
+    d: `M ${colX.summarize + boxW / 2} ${cy(0) + boxH + 4} L ${colX.summarize + boxW / 2} ${ry} L ${colX.search + boxW / 2} ${ry} L ${colX.search + boxW / 2} ${cy(0) + boxH + 4}`,
+    class: "e-retry",
+    fill: "none",
+    "marker-end": "url(#arrow-grey)"
   });
   svg.appendChild(retryEdge);
   const retryLabel = svgEl("text", { x: (colX.search + colX.summarize) / 2 + 20, y: ry - 5, class: "n-sub" });
