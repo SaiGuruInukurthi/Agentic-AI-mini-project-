@@ -167,7 +167,7 @@ svg { display: block; min-width: 680px; width: 100%; height: auto; overflow: vis
 
 <script>
 // ── Pipeline SVG ──────────────────────────────────────────────────────────
-const MAX_ROWS = 5;
+  const MAX_ROWS = 10;
 const NODE = { EXTRACT: 0, SEARCH: 1, SUMMARIZE: 2, VERDICT: 3 };
 let nodes = {};     // key → {el, label}
 let edges = {};     // key → line element
@@ -278,10 +278,47 @@ function setEdgeState(edge, state) {
 
 function activateRow(url) {
   if (!(url in urlToRow)) {
+    // Backend is dynamic (up to 5 sources/round + retry round) — grow rows to match.
+    if (Object.keys(urlToRow).length >= rowNodes.length && rowNodes.length < MAX_ROWS) {
+      growPipeline(rowNodes.length + 1);
+    }
     const used = Object.keys(urlToRow).length;
     if (used < rowNodes.length) urlToRow[url] = used;
   }
   return urlToRow[url] ?? -1;
+}
+
+function pipelineStateSnapshot() {
+  const st = el => el.classList.contains("n-active") ? "active" : el.classList.contains("n-done") ? "done" : el.classList.contains("n-error") ? "error" : "idle";
+  const es = e => e.classList.contains("e-active") ? "active" : e.classList.contains("e-done") ? "done" : "idle";
+  const nodeState = {};
+  ["extract", "search", "summarize", "verdict"].forEach(k => {
+    const el = document.querySelector(`rect[data-key="${k}"]`);
+    nodeState[k] = el ? st(el) : "idle";
+  });
+  return {
+    nodeState,
+    rows: rowNodes.map(r => ({ read: st(r.read), critique: st(r.critique), edges: r.edges.map(es) })),
+    retry: es(edges.retry),
+    urlToRow: { ...urlToRow },
+  };
+}
+
+function applyPipelineState(s) {
+  Object.entries(s.nodeState).forEach(([k, v]) => setNodeState(k, v));
+  s.rows.forEach((r, i) => {
+    setRowState(i, "read", r.read);
+    setRowState(i, "critique", r.critique);
+    r.edges.forEach((e, j) => setEdgeState(rowNodes[i].edges[j], e));
+  });
+  setEdgeState(edges.retry, s.retry);
+  urlToRow = s.urlToRow;
+}
+
+function growPipeline(nRows) {
+  const s = pipelineStateSnapshot();
+  buildPipeline(nRows);
+  applyPipelineState(s);
 }
 
 function resetPipeline() {

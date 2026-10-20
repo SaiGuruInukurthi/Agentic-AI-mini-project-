@@ -79,7 +79,7 @@ flowchart TB
 ```mermaid
 flowchart TB
     subgraph L1["Presentation (no build step)"]
-        UIx["index.html + vanilla JS<br/>SSE parser, pipeline SVG with live node/edge<br/>highlighting, verdict badges, credibility bars,<br/>collapsible sources tables, activity log, demo replay"]
+        UIx["index.html + vanilla JS<br/>SSE parser, pipeline SVG with live node/edge<br/>highlighting (branch rows auto-grow to source count,<br/>max 10), verdict badges, credibility bars,<br/>collapsible sources tables, activity log, demo replay"]
     end
     subgraph L2["API"]
         APX["FastAPI routes, SSE event mapping,<br/>claim-extractor loop (≤3 claims), timeout guard"]
