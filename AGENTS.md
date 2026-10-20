@@ -17,7 +17,7 @@ Rules for any coding agent working in this repo. Read this file and `Docs/MVP.md
 - **Verified quirk (19-10-2026):** in agent tool shells, `conda activate mini; python ...` can silently keep base Python (3.13) instead of `mini` (3.12). The reliable pattern is the full path:
 
   ```powershell
-  & "C:\Users\IC1807\anaconda3\envs\mini\python.exe" path\to\script.py
+  & "<your-conda-path>\envs\mini\python.exe" path\to\script.py
   ```
 
   Use the full path for anything that must run in `mini`; use `conda activate mini` only in interactive shells.
@@ -73,11 +73,9 @@ The Groq free tier is limited and cannot be refilled. Treat every live call as e
 |---|---|
 | List files | `dir` |
 | Activate env (interactive only) | `conda activate mini` |
-| Run a script in `mini` | `& "C:\Users\IC1807\anaconda3\envs\mini\python.exe" path\to\script.py` |
-| Run unit tests (no API) | `& "C:\Users\IC1807\anaconda3\envs\mini\python.exe" -m pytest tests -q` |
-| Install a package | `& "C:\Users\IC1807\anaconda3\envs\mini\python.exe" -m pip install <package>` |
-| Run backend (M5+) | `& "C:\Users\IC1807\anaconda3\envs\mini\python.exe" -m uvicorn app.main:app --reload` |
+| Run a script in `mini` | `& "<your-conda-path>\envs\mini\python.exe" path\to\script.py` |
+| Run unit tests (no API) | `& "<your-conda-path>\envs\mini\python.exe" -m pytest tests -q` |
+| Install a package | `& "<your-conda-path>\envs\mini\python.exe" -m pip install <package>` |
+| Run backend (M5+) | `& "<your-conda-path>\envs\mini\python.exe" -m uvicorn app.main:app --reload` |
 | Replay latest trace (no API) | Open http://127.0.0.1:8000 and press **▶ Demo replay**, or `GET /demo?file=...` |
-| MCP smoke test (no API) | `& "C:\Users\IC1807\anaconda3\envs\mini\python.exe" samples\smoke_mcp.py` |
-
-Skills provide specialized instructions and workflows for specific tasks.
+| MCP smoke test (no API) | `& "<your-conda-path>\envs\mini\python.exe" samples\smoke_mcp.py` |

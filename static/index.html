@@ -540,6 +540,7 @@ function runDemo() {
 
 // Init
 buildPipeline(3);
+if (new URLSearchParams(location.search).get("autoplay")) runDemo();
 </script>
 </body>
 </html>
