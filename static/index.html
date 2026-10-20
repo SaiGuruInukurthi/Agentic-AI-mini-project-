@@ -404,6 +404,9 @@ function handleEvent(d) {
       setRowState(i, "critique", "done");
     }
   }
+  else if (d.type === "input") {
+    document.getElementById("input").value = d.text || "";
+  }
   else if (d.type === "notice") {
     const n = document.getElementById("notice");
     n.textContent = d.message; n.style.display = "block";

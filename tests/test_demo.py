@@ -36,6 +36,7 @@ def test_demo_replay(monkeypatch, tmp_path):
         resp = client.get("/demo")
         assert resp.status_code == 200
         body = resp.text
+        assert '"type": "input"' in body
         assert '"type": "progress"' in body
         assert '"type": "finding"' in body
         assert '"type": "result"' in body

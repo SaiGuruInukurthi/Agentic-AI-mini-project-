@@ -164,6 +164,9 @@ def _replay_sse(events: list[dict]):
         yield _sse({"type": "error", "message": "Trace has no claims to replay."})
         return
 
+    ui = next((e.get("text") for e in events if e["kind"] == "user_input"), None)
+    yield _sse({"type": "input", "text": ui or claims[0]})
+
     yield _sse({"type": "progress", "node": "extract_claims",
                 "detail": f"Extracted {len(claims)} claim(s)" + (f" - {notice}" if notice else "")})
     if notice:
