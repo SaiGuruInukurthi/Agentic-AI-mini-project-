@@ -65,6 +65,7 @@ The Groq free tier is limited and cannot be refilled. Treat every live call as e
 - All LLM access goes through `app/llm.py` only.
 - File paths referenced here (`app/llm.py`, `verdict.py`, `tests/`, `cli.py`) follow the target layout in `Docs/MVP.md` Section 14. Until a milestone creates them, they do not exist yet.
 - Commit after each milestone with a clear message. Never commit `.env`.
+- Remote `origin` = https://github.com/SaiGuruInukurthi/Agentic-AI-mini-project- (branch `master`, pushed 20-10-2026). Push after committing when the user asks for it.
 
 ## 6. Quick reference
 

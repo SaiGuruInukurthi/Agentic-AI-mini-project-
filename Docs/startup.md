@@ -69,6 +69,7 @@ Open http://127.0.0.1:8000, paste a claim, press **Check claim**. Live progress 
 | Symptom | Cause / fix |
 |---|---|
 | `model_not_found` 404 | Model ID changed; check available models via the Groq console and update `GROQ_MODEL` |
+| 401 `expired_api_key` / Invalid API Key | The key in `.env` expired or was revoked (seen 20-10-2026); generate a new one at console.groq.com/keys and update `GROQ_API` in `.env` |
 | `json_validate_failed` (400, empty generation) | Reasoning tokens ate the budget; `reasoning_effort="low"` + `max_tokens>=600` is already set in `app/llm.py` |
 | DDG "anomaly detected" | Free-engine flakiness; search tool retries 3x, or just rerun later |
 | `UnicodeEncodeError: charmap` on print | cp1252 console; `cli.py` already reconfigures stdout to UTF-8 |

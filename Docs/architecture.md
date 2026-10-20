@@ -306,6 +306,7 @@ Event shapes (spec Section 11):
 | type | payload |
 |---|---|
 | `progress` | `{node, detail, url?}` — `url` present on branch events (and replay read/critique events) so the UI can highlight the right pipeline row |
+| `input` | `{text}` — demo replay only: the trace's original user input, used to refill the prompt box |
 | `finding` | `{finding: Finding}` |
 | `notice` | `{message}` (claim cap) |
 | `result` | `{claim, verdict, score, explanation, findings, retries}` |
@@ -320,12 +321,12 @@ flowchart LR
     A["GET /demo"] --> B{"logs/*.jsonl<br/>exists?"}
     B -->|no| E["error event:<br/>no recorded runs"]
     B -->|yes| R["read newest trace<br/>(or ?file=)"]
-    R --> M["map trace kinds → SSE shapes:<br/>user_input · llm_response(ExtractedClaims) → claims<br/>mcp_search(_result) → search progress + source count<br/>mcp_fetch → read row · llm_attempt(Critique) → critique row<br/>finding → finding event · claim_result → result event"]
+    R --> M["map trace kinds → SSE shapes:<br/>user_input → input event (refill prompt box)<br/>llm_response(ExtractedClaims) → claims<br/>mcp_search(_result) → search progress + source count<br/>mcp_fetch → read row · llm_attempt(Critique) → critique row<br/>finding → finding event · claim_result → result event"]
     M --> S["stream with 0.3 s pacing<br/>(same event shapes as /check)"]
     S --> D["done event: replay finished (no tokens used)"]
 ```
 
-Mapping rules: the stream is split into per-claim segments at each `claim_result`; the first `mcp_search_result` of a segment says "Found: N candidate sources", later ones say "Retrying with refined query" (search round > 1); `mcp_evidence`, `llm_done`, `mcp_fetch_result`, and raw LLM content events are deliberately skipped — replay shows what the UI needs, not every internal event. Finer-grained than live: live `/check` only emits branch-level progress (LangGraph updates fire per node completion), while replay also highlights the individual `read` and `critique` cells per branch.
+Mapping rules: the trace's original `user_input` is emitted first as an `input` event so the replay refills the prompt box (falls back to the first claim for traces without it). The stream is split into per-claim segments at each `claim_result`; the first `mcp_search_result` of a segment says "Found: N candidate sources", later ones say "Retrying with refined query" (search round > 1); `mcp_evidence`, `llm_done`, `mcp_fetch_result`, and raw LLM content events are deliberately skipped — replay shows what the UI needs, not every internal event. Finer-grained than live: live `/check` only emits branch-level progress (LangGraph updates fire per node completion), while replay also highlights the individual `read` and `critique` cells per branch.
 
 ## 11. Build history (git)
 
@@ -346,6 +347,9 @@ gitGraph
     commit id: "trace fixes"
     commit id: "demo replay + pipeline SVG"
     commit id: "sources table"
+    commit id: "arch sync: replay + tables"
+    commit id: "pipeline rows auto-grow"
+    commit id: "replay input fill"
 ```
 
 ## 12. Reliability architecture (cross-cutting)
