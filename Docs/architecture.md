@@ -25,7 +25,7 @@ flowchart TB
         F["subprocess<br/>uvx mcp-server-fetch"]
         E["subprocess<br/>mcp_servers/evidence_server.py<br/>FastMCP"]
     end
-    B <-->|"HTTP: GET / · POST /check (SSE)"| API
+    B <-->|"HTTP: GET / · POST /check (SSE)<br/>GET /demo (SSE replay, zero tokens)"| API
     API <-->|"stdio (MCP protocol)"| S
     API <-->|"stdio (MCP protocol)"| F
     API <-->|"stdio (MCP protocol)"| E
@@ -42,10 +42,11 @@ MCP servers start once at app startup (lifespan in `app/main.py`), not per reque
 ```mermaid
 flowchart TB
     subgraph UI["static/"]
-        HTML["index.html"]
+        HTML["index.html<br/>pipeline SVG · demo replay button<br/>activity log · sources tables"]
     end
     subgraph APP["app/"]
-        MAIN["main.py<br/>FastAPI, SSE mapping, 3-min budget"]
+        MAIN["main.py<br/>FastAPI, SSE mapping, 3-min budget,<br/>/demo trace replay"]
+        TRACE["trace.py<br/>JSONL run logging → logs/"]
         GRAPH["graph.py<br/>nodes, Send fan-out, retry routing"]
         NODES["nodes.py<br/>extract · search · read · critique · rewrite"]
         VERDICT["verdict.py<br/>pure scoring formula"]
@@ -60,9 +61,12 @@ flowchart TB
     end
     HTML -->|SSE| MAIN
     MAIN --> GRAPH --> NODES
+    MAIN --> TRACE
     NODES --> LLM
     NODES --> MCP
     NODES --> PROMPTS
+    LLM --> TRACE
+    MCP --> TRACE
     GRAPH --> VERDICT
     GRAPH --> STATE
     MCP --> SESS
@@ -75,7 +79,7 @@ flowchart TB
 ```mermaid
 flowchart TB
     subgraph L1["Presentation (no build step)"]
-        UIx["index.html + vanilla JS<br/>SSE parser, verdict badges, credibility bars"]
+        UIx["index.html + vanilla JS<br/>SSE parser, pipeline SVG with live node/edge<br/>highlighting, verdict badges, credibility bars,<br/>collapsible sources tables, activity log, demo replay"]
     end
     subgraph L2["API"]
         APX["FastAPI routes, SSE event mapping,<br/>claim-extractor loop (≤3 claims), timeout guard"]
@@ -168,6 +172,8 @@ sequenceDiagram
     end
     API-->>UI: SSE result {verdict, score, explanation, retries}
 ```
+
+Alternative entry point: `GET /demo` (UI "▶ Demo replay" button) runs the same SSE shapes against a recorded trace from `logs/` — see Section 10.
 
 ## 7. Data flow (DFD-style)
 
@@ -299,11 +305,27 @@ Event shapes (spec Section 11):
 
 | type | payload |
 |---|---|
-| `progress` | `{node, detail}` |
+| `progress` | `{node, detail, url?}` — `url` present on branch events (and replay read/critique events) so the UI can highlight the right pipeline row |
 | `finding` | `{finding: Finding}` |
 | `notice` | `{message}` (claim cap) |
 | `result` | `{claim, verdict, score, explanation, findings, retries}` |
 | `error` | `{message}` |
+
+### Demo replay (`GET /demo`, zero tokens)
+
+The UI's "▶ Demo replay" button replays the newest `logs/*.jsonl` trace through the same SSE consumer — no LLM or MCP calls, so UI work and demos cost nothing. `?file=` selects a specific trace; pacing is ~0.3 s per event.
+
+```mermaid
+flowchart LR
+    A["GET /demo"] --> B{"logs/*.jsonl<br/>exists?"}
+    B -->|no| E["error event:<br/>no recorded runs"]
+    B -->|yes| R["read newest trace<br/>(or ?file=)"]
+    R --> M["map trace kinds → SSE shapes:<br/>user_input · llm_response(ExtractedClaims) → claims<br/>mcp_search(_result) → search progress + source count<br/>mcp_fetch → read row · llm_attempt(Critique) → critique row<br/>finding → finding event · claim_result → result event"]
+    M --> S["stream with 0.3 s pacing<br/>(same event shapes as /check)"]
+    S --> D["done event: replay finished (no tokens used)"]
+```
+
+Mapping rules: the stream is split into per-claim segments at each `claim_result`; the first `mcp_search_result` of a segment says "Found: N candidate sources", later ones say "Retrying with refined query" (search round > 1); `mcp_evidence`, `llm_done`, `mcp_fetch_result`, and raw LLM content events are deliberately skipped — replay shows what the UI needs, not every internal event. Finer-grained than live: live `/check` only emits branch-level progress (LangGraph updates fire per node completion), while replay also highlights the individual `read` and `critique` cells per branch.
 
 ## 11. Build history (git)
 
@@ -319,6 +341,11 @@ gitGraph
     commit id: "M6: retry + multi-claim"
     commit id: "final report"
     commit id: "startup.md"
+    commit id: "Tool-MCP.md"
+    commit id: "tracing + routing"
+    commit id: "trace fixes"
+    commit id: "demo replay + pipeline SVG"
+    commit id: "sources table"
 ```
 
 ## 12. Reliability architecture (cross-cutting)
@@ -333,3 +360,5 @@ gitGraph
 | Flaky search | 3-attempt capped retry inside search tool | `mcp_servers/search_server.py` |
 | Runaway runtime | 180s budget → error event with partial results | `app/main.py` |
 | Missing key | fail fast at startup | `app/main.py` lifespan |
+| Token-free UI testing | `GET /demo` replays recorded traces as the same SSE shapes | `app/main.py` |
+| Observability | JSONL run trace (input, MCP calls, LLM prompts/responses, findings, verdicts) | `app/trace.py` → `logs/` (gitignored) |
